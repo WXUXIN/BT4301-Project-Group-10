@@ -1,0 +1,23 @@
+# --- Data (large files; keep locally, do not commit) ---
+data/
+
+# --- Python Virtual Environments ---
+# Ignore the virtual environment directory created in the activities
+python3venv/
+venv/
+.env/
+
+# --- Sensitive Information ---
+# Ignore any files containing passwords or connection strings
+.env
+config.json
+credentials.txt
+
+# --- OS & IDE Specific ---
+# Ignore temporary files created by macOS, Windows, or VS Code
+.DS_Store
+Thumbs.db
+.vscode/
+.ipynb_checkpoints/
+__pycache__/
+*.py[cod]
