@@ -1,5 +1,14 @@
 # --- Data (large files; keep locally, do not commit) ---
 data/
+dataops/airflow/staging/
+
+# --- Airflow (logs, local DB, generated/sensitive) ---
+dataops/airflow/logs/
+dataops/airflow/airflow.db
+dataops/airflow/simple_auth_manager_passwords.json.generated
+dataops/airflow/webserver_config.py
+dataops/airflow/unittests.cfg
+*.log
 
 # --- Python Virtual Environments ---
 # Ignore the virtual environment directory created in the activities

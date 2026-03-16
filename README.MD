@@ -121,7 +121,91 @@ Use **SQLTools** in Cursor/VS Code to connect to MySQL and view the tables after
 
 Ensure MySQL is running (`sudo service mysql start` in Ubuntu/Docker) and that the host/port are reachable from where Cursor runs (e.g. port 3306 forwarded from the container if MySQL is inside Docker).
 
-### 6. Running the pipeline notebook
+### 6. Apache Airflow (orchestration)
+
+The project includes **Apache Airflow** for workflow orchestration. Airflow configuration and DAGs live under `dataops/airflow/`.
+
+**What’s included:**
+
+- **`dataops/airflow/airflow.cfg`** — Airflow configuration (paths, executor, database, logging).
+- **`dataops/airflow/dags/`** — Folder for DAG Python files (scheduler loads DAGs from here).
+- **`dataops/airflow/plugins/`** — Custom Airflow plugins (if any).
+- **`dataops/airflow/logs/`** — Task and DAG processor logs.
+
+**Airflow metadata database (MySQL):**
+
+Airflow uses a **separate** MySQL database from the Home Credit data:
+
+- **Database name:** `airflow_group10`
+- **Connection** (in `airflow.cfg`): `mysql+mysqldb://bt4301:password@localhost:3306/airflow_group10`
+
+Create the database and user in MySQL (same host/user as your project MySQL, or adjust the connection in `airflow.cfg`):
+
+```sql
+CREATE DATABASE airflow_group10;
+```
+
+**Setup steps:**
+
+1. Install Airflow and the MySQL provider in your venv (if not already in `dataops/requirements.txt`):
+
+   ```bash
+   pip install "apache-airflow>=2.0" "apache-airflow-providers-mysql"
+   pip install mysqlclient   # for mysql+mysqldb driver
+   ```
+
+2. **Set `AIRFLOW_HOME`** to the project’s Airflow directory. **You must do this in the same shell before every `airflow` command**, otherwise Airflow uses `~/airflow` and will not see the project’s DAGs (e.g. `home_credit_etl`).
+
+   From the project root `BT4301-Project-Group-10`:
+
+   ```bash
+   export AIRFLOW_HOME="$(pwd)/dataops/airflow"
+   ```
+
+   Or with an absolute path (adjust if your clone path is different):
+
+   ```bash
+   export AIRFLOW_HOME=/root/bt4301-group10/BT4301-Project-Group-10/dataops/airflow
+   ```
+
+   To avoid setting it every time, add the `export` line to your `~/.bashrc` and run `source ~/.bashrc` (or open a new terminal) before starting Airflow.
+
+3. Initialize the Airflow metadata database:
+
+   ```bash
+   airflow db init
+   ```
+
+4. Create an admin user (for the web UI):
+
+   ```bash
+   airflow users create --role Admin --username admin --email admin@example.com --firstname Admin --lastname User --password password
+   ```
+
+   (Change username/password as needed; `airflow.cfg` has `simple_auth_manager_users = admin:admin`.)
+
+5. Start Airflow (in one terminal). **Ensure `AIRFLOW_HOME` is set in this shell** (see step 2):
+
+   ```bash
+   cd BT4301-Project-Group-10
+   export AIRFLOW_HOME="$(pwd)/dataops/airflow"
+   airflow scheduler &
+   airflow dag-processor &
+   airflow api-server
+   ```
+
+   If you see “Searching for files in dags-folder at `/root/airflow/dags`” or only tutorial DAGs, Airflow is using the default home. Stop the processes, set `AIRFLOW_HOME` as above, and start again.
+
+Then open the UI at `http://localhost:8088` (api-server) or your webserver port. The **home_credit_etl** DAG will appear in `dataops/airflow/dags/` once the scheduler reads from the project’s `dags` folder.
+
+**Config highlights (in `airflow.cfg`):**
+
+- **Executor:** `LocalExecutor`
+- **DAGs folder:** `dataops/airflow/dags`
+- **Logs:** `dataops/airflow/logs`
+- **Metadata DB:** MySQL `airflow_group10` (see above)
+
+### 7. Running the pipeline notebook
 
 1. In your **remote Ubuntu terminal** (Docker or WSL2):
    - Activate the venv and ensure MySQL is running:
@@ -144,4 +228,4 @@ Ensure MySQL is running (`sudo service mysql start` in Ubuntu/Docker) and that t
 
 After the pipeline has loaded data, use the **SQLTools** connection (Section 5) to confirm the tables **application_train**, **application_test**, **bureau**, and **bureau_balance** are present and to run queries.
 
-This should fully set up the Python environment, MySQL database, SQLTools connection, and notebook execution for the project.
+This should fully set up the Python environment, MySQL database, SQLTools connection, optional Airflow orchestration, and notebook execution for the project.
