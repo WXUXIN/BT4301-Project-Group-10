@@ -5,6 +5,7 @@ from pathlib import Path
 import mysql.connector
 import numpy as np
 import pandas as pd
+from sqlalchemy import create_engine, text
 
 _THIS_DIR = Path(__file__).resolve().parent
 # base_dir: project root
@@ -147,34 +148,6 @@ def transform(staging_dir: Path = None) -> dict:
     return result
 
 
-def _pd_to_mysql_type(dtype) -> str:
-    if pd.api.types.is_integer_dtype(dtype):
-        return "BIGINT"
-    if pd.api.types.is_float_dtype(dtype):
-        return "DOUBLE"
-    if pd.api.types.is_bool_dtype(dtype):
-        return "TINYINT(1)"
-    if pd.api.types.is_datetime64_any_dtype(dtype):
-        return "DATETIME"
-    return "TEXT"
-
-
-def _row_to_tuple(row) -> tuple:
-    out = []
-    for v in row:
-        if pd.isna(v) or (isinstance(v, float) and np.isinf(v)):
-            out.append(None)
-        elif isinstance(v, (np.integer, np.int64, np.int32)):
-            out.append(int(v))
-        elif isinstance(v, (np.floating, np.float64, np.float32)):
-            out.append(float(v))
-        elif isinstance(v, bool):
-            out.append(1 if v else 0)
-        else:
-            out.append(v)
-    return tuple(out)
-
-
 def load(
     staging_dir: Path = None,
     mysql_config: dict = None,
@@ -197,62 +170,48 @@ def load(
     cur.close()
     conn.close()
 
-    conn = mysql.connector.connect(
-        host=mysql_config["host"],
-        user=mysql_config["user"],
-        password=mysql_config["password"],
-        database=mysql_config["database"],
-        port=mysql_config["port"],
+    connection_string = (
+        f"mysql+pymysql://{mysql_config['user']}:{mysql_config['password']}"
+        f"@{mysql_config['host']}:{mysql_config['port']}/{mysql_config['database']}"
     )
-    cur = conn.cursor()
+    engine = create_engine(connection_string, echo=False)
 
-    try:
-        cur.execute("DROP TABLE IF EXISTS bureau_balance;")
-        cur.execute("DROP TABLE IF EXISTS bureau;")
-        cur.execute("DROP TABLE IF EXISTS application_test;")
-        cur.execute("DROP TABLE IF EXISTS application_train;")
-        conn.commit()
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS bureau_balance;"))
+        conn.execute(text("DROP TABLE IF EXISTS bureau;"))
+        conn.execute(text("DROP TABLE IF EXISTS application_test;"))
+        conn.execute(text("DROP TABLE IF EXISTS application_train;"))
 
-        tables = ["application_train", "application_test", "bureau", "bureau_balance"]
-        for table in tables:
-            path = out_dir / f"{table}.csv"
-            if not path.exists():
-                raise FileNotFoundError(f"Transformed file not found: {path}. Run transform first.")
-            logger.info("Loading %s into MySQL (batch_size=%s, delay=%.1fs)", table, batch_size, batch_delay_seconds)
-            df = pd.read_csv(path)
-            n_rows = len(df)
-            cols = list(df.columns)
+    tables = ["application_train", "application_test", "bureau", "bureau_balance"]
+    for table in tables:
+        path = out_dir / f"{table}.csv"
+        if not path.exists():
+            raise FileNotFoundError(f"Transformed file not found: {path}. Run transform first.")
+        logger.info("Loading %s into MySQL (chunksize=%s, delay=%.1fs)", table, batch_size, batch_delay_seconds)
+        df = pd.read_csv(path)
+        n_rows = len(df)
+        n_chunks = (n_rows + batch_size - 1)
 
-            defs = [f"`{c}` {_pd_to_mysql_type(df[c].dtype)}" for c in cols]
-            cur.execute(f"CREATE TABLE `{table}` ({', '.join(defs)});")
-            conn.commit()
+        for i in range(0, n_rows, batch_size):
+            chunk = df.iloc[i : i + batch_size]
+            chunk_num = i 
+            if_exists = "replace" if chunk_num == 1 else "append"
+            chunk.to_sql(
+                name=table,
+                con=engine,
+                if_exists=if_exists,
+                index=False,
+                chunksize=batch_size,
+            )
+            rows_this_batch = len(chunk)
+            rows_so_far = min(i + batch_size, n_rows)
+            logger.info(
+                "%s: batch %s/%s ingested %s rows (total so far: %s/%s)",
+                table, chunk_num, n_chunks, rows_this_batch, rows_so_far, n_rows,
+            )
+            if chunk_num < n_chunks:
+                time.sleep(batch_delay_seconds)
 
-            placeholders = ", ".join(["%s"] * len(cols))
-            col_list = ", ".join(f"`{c}`" for c in cols)
-            insert_sql = f"INSERT INTO `{table}` ({col_list}) VALUES ({placeholders})"
+        logger.info("Loaded %s: %s rows complete", table, n_rows)
 
-            for i in range(0, n_rows, batch_size):
-                chunk = df.iloc[i : i + batch_size]
-                rows = [_row_to_tuple(tuple(r)) for r in chunk.itertuples(index=False)]
-                if rows:
-                    cur.executemany(insert_sql, rows)
-                conn.commit()
-                chunk_num = i // batch_size + 1
-                n_chunks = (n_rows + batch_size - 1) // batch_size
-                rows_this_batch = len(rows)
-                rows_so_far = min(i + batch_size, n_rows)
-                logger.info(
-                    "%s: batch %s/%s ingested %s rows (total so far: %s/%s)",
-                    table, chunk_num, n_chunks, rows_this_batch, rows_so_far, n_rows,
-                )
-                if chunk_num < n_chunks:
-                    time.sleep(batch_delay_seconds)
-            logger.info("Loaded %s: %s rows complete", table, n_rows)
-
-        logger.info("Loaded application_train, application_test, bureau, bureau_balance into MySQL.")
-    finally:
-        try:
-            cur.close()
-            conn.close()
-        except Exception:
-            pass
+    logger.info("Loaded application_train, application_test, bureau, bureau_balance into MySQL.")
