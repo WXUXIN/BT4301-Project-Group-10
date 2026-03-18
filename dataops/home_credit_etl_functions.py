@@ -36,24 +36,21 @@ def get_default_mysql_config():
     }
 
 
-def extract(
-    data_path: Path = None,
-    staging_dir: Path = None,
-) -> dict:
-    data_path = data_path or DATA_PATH
+def extract(data_path: Path = None, staging_dir: Path = None,) -> dict:         # Take raw CSV files → copy them into a staging folder → return where these files are stored
+    data_path = data_path or DATA_PATH                                          # extract function returns a dictionary
     staging_dir = Path(staging_dir or DEFAULT_STAGING_DIR)
-    raw_dir = staging_dir / "raw"
-    raw_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir = staging_dir / "raw"         # inside staging folder → create a subfolder called raw
+    raw_dir.mkdir(parents=True, exist_ok=True)      # create the folder if it doesn’t exist, don’t crash if it already exists
 
     result = {}
-    for csv_name, (stage_name, _) in TABLE_CONFIG.items():
-        csv_path = data_path / csv_name
+    for csv_name, (stage_name, _) in TABLE_CONFIG.items():      # Loop through all CSV files
+        csv_path = data_path / csv_name     # Combine folder path + file name
         if not csv_path.exists():
             raise FileNotFoundError(f"CSV not found: {csv_path}. Place datasets in {data_path}")
-        logger.info("Extracting %s from %s", csv_name, csv_path)
-        df = pd.read_csv(csv_path)
-        out_path = raw_dir / f"{stage_name}.csv"
-        df.to_csv(out_path, index=False)
+        logger.info("Extracting %s from %s", csv_name, csv_path)        # Log what’s happening
+        df = pd.read_csv(csv_path)      # actual extraction, reading the csv
+        out_path = raw_dir / f"{stage_name}.csv"        
+        df.to_csv(out_path, index=False)        # # Save into staging
         result[stage_name] = str(out_path)
         logger.info("Wrote %s rows to %s", len(df), out_path)
 
@@ -148,24 +145,19 @@ def transform(staging_dir: Path = None) -> dict:
     return result
 
 
-def load(
-    staging_dir: Path = None,
-    mysql_config: dict = None,
-    batch_size: int = 10_000,
-    batch_delay_seconds: float = 0.5,
-) -> None:
+def load(staging_dir: Path = None, mysql_config: dict = None, batch_size: int = 10_000, batch_delay_seconds: float = 0.5) -> None:      # Takes cleaned CSV files → puts them into MySQL database tables
     staging_dir = Path(staging_dir or DEFAULT_STAGING_DIR)
-    out_dir = staging_dir / "transformed"
-    mysql_config = mysql_config or get_default_mysql_config()
+    out_dir = staging_dir / "transformed"       # This is where your cleaned CSV files are, staging/transformed/
+    mysql_config = mysql_config or get_default_mysql_config()       # Get host, username, password & database name (database details)
 
-    conn = mysql.connector.connect(
+    conn = mysql.connector.connect(     # connect to database
         host=mysql_config["host"],
         user=mysql_config["user"],
         password=mysql_config["password"],
         port=mysql_config["port"],
     )
     cur = conn.cursor()
-    cur.execute(f"CREATE DATABASE IF NOT EXISTS `{mysql_config['database']}`;")
+    cur.execute(f"CREATE DATABASE IF NOT EXISTS `{mysql_config['database']}`;")     # if database doesn't exist, create it, if not, do nothing
     conn.commit()
     cur.close()
     conn.close()
@@ -174,16 +166,16 @@ def load(
         f"mysql+pymysql://{mysql_config['user']}:{mysql_config['password']}"
         f"@{mysql_config['host']}:{mysql_config['port']}/{mysql_config['database']}"
     )
-    engine = create_engine(connection_string, echo=False)
+    engine = create_engine(connection_string, echo=False)       # connect to mySQL using SQLalchemy
 
-    with engine.begin() as conn:
+    with engine.begin() as conn:            # remove old data completely
         conn.execute(text("DROP TABLE IF EXISTS bureau_balance;"))
         conn.execute(text("DROP TABLE IF EXISTS bureau;"))
         conn.execute(text("DROP TABLE IF EXISTS application_test;"))
         conn.execute(text("DROP TABLE IF EXISTS application_train;"))
 
     tables = ["application_train", "application_test", "bureau", "bureau_balance"]
-    for table in tables:
+    for table in tables:        # for each table, load the cleaned csv into memory
         path = out_dir / f"{table}.csv"
         if not path.exists():
             raise FileNotFoundError(f"Transformed file not found: {path}. Run transform first.")
@@ -192,11 +184,11 @@ def load(
         n_rows = len(df)
         n_chunks = (n_rows + batch_size - 1)
 
-        for i in range(0, n_rows, batch_size):
+        for i in range(0, n_rows, batch_size):      # Instead of loading everything at once, load 10,000 rows at a time
             chunk = df.iloc[i : i + batch_size]
             chunk_num = i 
             if_exists = "replace" if chunk_num == 1 else "append"
-            chunk.to_sql(
+            chunk.to_sql(       # sends data into mySQL
                 name=table,
                 con=engine,
                 if_exists=if_exists,

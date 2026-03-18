@@ -7,7 +7,7 @@ if str(_DATAOPS_DIR) not in sys.path:
     sys.path.insert(0, str(_DATAOPS_DIR))
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.python import PythonOperator
 
 from home_credit_etl_functions import (
     DEFAULT_STAGING_DIR,
