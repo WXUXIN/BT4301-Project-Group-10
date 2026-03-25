@@ -29,6 +29,7 @@ with DAG(
     start_date=datetime(2026, 3, 1),
     schedule="*/1 * * * *",   # every 1 minutes for testing, every minute ingests 1 period
     catchup=False,
+    max_active_runs=1,
     tags=["bt4301", "etl", "customer_churn"],
 ) as dag:
 

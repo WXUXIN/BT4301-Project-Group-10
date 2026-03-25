@@ -169,7 +169,6 @@ def transform_dim_service(df):
     """
     dim_service = df[[
         "customer_id",
-        "totalcharges",
         "num_services",
         "has_phone_service",
         "has_internet_service",
