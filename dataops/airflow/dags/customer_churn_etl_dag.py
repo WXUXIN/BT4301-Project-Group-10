@@ -27,10 +27,10 @@ COUNTER_FILE = "/tmp/airflow_churn_period_counter.txt"
 with DAG(
     dag_id="customer_churn_incremental_etl",
     start_date=datetime(2026, 3, 1),
-    schedule="*/1 * * * *",   # every 1 minutes for testing, every minute ingests 1 period
+    schedule="*/1 * * * *",   # every 1 minute for testing, every run ingests 1 monthly period
     catchup=False,
     max_active_runs=1,
-    tags=["bt4301", "etl", "customer_churn"],
+    tags=["bt4301", "etl", "customer_churn", "watermarking"],
 ) as dag:
 
     @task
@@ -55,6 +55,8 @@ with DAG(
     def etl_process(period):
         """
         Perform extract, transform, and load for one monthly batch.
+        Row-level fingerprints are generated at load time for each inserted
+        warehouse row to establish the trusted watermark baseline.
         """
         max_period = get_max_period()
 
@@ -91,7 +93,7 @@ with DAG(
         df_fact_churn = transform_fact_customer_churn(df_batch)
 
         # ==========================
-        # LOAD DIMENSIONS
+        # LOAD DIMENSIONS + WATERMARKING
         # ==========================
         load_new_dimension_rows(
             df_dim_customer,
@@ -122,7 +124,7 @@ with DAG(
         )
 
         # ==========================
-        # LOAD FACT
+        # LOAD FACT + WATERMARKING
         # ==========================
         load_new_fact_rows(
             df_fact_churn,

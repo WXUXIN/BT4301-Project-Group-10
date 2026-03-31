@@ -1,14 +1,21 @@
+import hashlib
+import json
+import math
+from datetime import date, datetime
+from decimal import Decimal
+
+import numpy as np
 import pandas as pd
-from sqlalchemy import inspect
-from datetime import datetime
+from sqlalchemy import inspect, text
 from dateutil.relativedelta import relativedelta
+
 
 # ---------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------
 
 # Update this to your real file path
-CSV_FILE_PATH = "/root/bt4301_group_project/BT4301-Project-Group-10/data/customer_churn_1M.csv"
+CSV_FILE_PATH = "/root/bt4301-group10/BT4301-Project-Group-10/data/customer_churn_1M.csv"
 
 # Target MySQL data warehouse
 DATAWAREHOUSE_DB = "mysql://bt4301:password@localhost:3306/customer_churn"
@@ -127,6 +134,11 @@ def transform_dim_customer(df):
         "dependents",
         "senior_citizen"
     ]].copy()
+
+    dim_customer["signup_date"] = pd.to_datetime(dim_customer["signup_date"]).dt.normalize()
+
+    for col in ("age", "dependents", "senior_citizen"):
+        dim_customer[col] = pd.to_numeric(dim_customer[col], errors="coerce").astype("Int64")
 
     # simple missing value handling
     dim_customer["annual_income"] = dim_customer["annual_income"].fillna(
@@ -247,19 +259,140 @@ def transform_fact_customer_churn(df):
     return fact_customer_churn
 
 
+# ---------------------------------------------------------
+# ROW-LEVEL WATERMARKING
+# ---------------------------------------------------------
+
+fingerprint_column = "row_fp"
+
+
+def normalize_value(value):
+    """
+    Map a cell to a JSON-serializable, stable form for fingerprinting.
+    """
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    if isinstance(value, pd.Timestamp):
+        if pd.isna(value):
+            return None
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, np.datetime64):
+        ts = pd.Timestamp(value)
+        if pd.isna(ts):
+            return None
+        return ts.strftime("%Y-%m-%d")
+    if isinstance(value, (bool, np.bool_)):
+        return int(value)
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, Decimal):
+        fv = float(value)
+        if math.isnan(fv):
+            return None
+        return f"{fv:.12g}"
+    if isinstance(value, (float, np.floating)):
+        fv = float(value)
+        if pd.isna(fv) or math.isnan(fv):
+            return None
+        return f"{fv:.12g}"
+
+    return str(value).strip()
+
+
+def row_fingerprint(row: pd.Series, exclude_cols=None) -> str:
+    """
+    SHA-256 fingerprint for one row: canonical JSON with sorted object keys.
+    """
+    if exclude_cols is None:
+        exclude_cols = set()
+    exclude_cols = set(exclude_cols)
+
+    record = {
+        col: normalize_value(row[col])
+        for col in sorted(row.index)
+        if col not in exclude_cols
+    }
+    canonical = json.dumps(
+        record,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def add_row_fingerprints(df, cols_to_hash):
+    """
+    Append `row_fp` using JSON-canonical row fingerprints.
+    """
+    df = df.copy()
+    cols_sorted = sorted(cols_to_hash)
+
+    def _fp(r):
+        return row_fingerprint(r[cols_sorted], exclude_cols=set())
+
+    df[fingerprint_column] = df.apply(_fp, axis=1)
+    return df
+
+
+def columns_for_fingerprint(df):
+    """
+    All loaded columns except the fingerprint column, sorted for hashing.
+    """
+    return sorted(c for c in df.columns if c != fingerprint_column)
+
+
+def ensure_fingerprint_column_exists(table_name, dwh_engine):
+    """
+    Add `row_fp` to an existing warehouse table if missing.
+    """
+    inspector = inspect(dwh_engine)
+
+    if not inspector.has_table(table_name):
+        return
+
+    existing_columns = {col["name"] for col in inspector.get_columns(table_name)}
+
+    if fingerprint_column not in existing_columns:
+        alter_sql = text(
+            f"ALTER TABLE `{table_name}` "
+            f"ADD COLUMN `{fingerprint_column}` CHAR(64) NULL"
+        )
+        with dwh_engine.begin() as conn:
+            conn.execute(alter_sql)
+
+        print(f"Added {fingerprint_column} column to {table_name}.")
+
 
 # ---------------------------------------------------------
 # LOAD HELPERS
 # ---------------------------------------------------------
 
-def load_new_dimension_rows(df, table_name, key_cols, dwh_engine):
+
+def load_new_dimension_rows(
+    df, table_name, key_cols, dwh_engine, fingerprint_cols=None
+):
     """
-    Insert only new dimension members into the target table.
+    Insert only new dimension members into the target table. Row-level `row_fp`
+    are computed from business columns at load time.
     """
     # 1. Remove duplicates within the incoming dataframe itself
     df = df.drop_duplicates(subset=key_cols).copy()
+    
     # helps retrieve detailed metadata about a database engine
     inspector = inspect(dwh_engine)
+
+    fp_cols = fingerprint_cols or sorted(c for c in df.columns if c != fingerprint_column)
+    df = add_row_fingerprints(df, cols_to_hash=fp_cols)
 
     # If table does not exist, create it and load all rows
     if not inspector.has_table(table_name):
@@ -267,10 +400,12 @@ def load_new_dimension_rows(df, table_name, key_cols, dwh_engine):
             name=table_name,
             con=dwh_engine,
             if_exists="append",
-            index=False
+            index=False,
         )
-        print(f"{table_name} created and {len(df)} rows inserted.")
+        print(f"{table_name} created and {len(df)} rows inserted, with row_fp.")
         return
+
+    ensure_fingerprint_column_exists(table_name, dwh_engine)
 
     # Read existing keys only
     key_list = ", ".join(key_cols)
@@ -286,32 +421,39 @@ def load_new_dimension_rows(df, table_name, key_cols, dwh_engine):
             name=table_name,
             con=dwh_engine,
             if_exists="append",
-            index=False
+            index=False,
         )
-        print(f"{len(df_new)} new rows inserted into {table_name}.")
+        print(f"{len(df_new)} new rows inserted into {table_name}, with row_fp.")
     else:
         print(f"No new rows to insert into {table_name}.")
 
 
-
-def load_new_fact_rows(df, table_name, key_cols, dwh_engine):
+def load_new_fact_rows(
+    df, table_name, key_cols, dwh_engine, fingerprint_cols=None
+):
     """
-    Insert only new fact rows.
+    Insert only new fact rows. Row-level `row_fp` is set at load time from
+    fact business columns.
     Since each customer appears once in this dataset,
     customer_id can be used as the business key.
     """
     df = df.drop_duplicates(subset=key_cols).copy()
     inspector = inspect(dwh_engine)
 
+    fp_cols = fingerprint_cols or sorted(c for c in df.columns if c != fingerprint_column)  # sorted for stability
+    df = add_row_fingerprints(df, cols_to_hash=fp_cols)
+
     if not inspector.has_table(table_name):
         df.to_sql(
             name=table_name,
             con=dwh_engine,
             if_exists="append",
-            index=False
+            index=False,
         )
-        print(f"{table_name} created and {len(df)} rows inserted.")
+        print(f"{table_name} created and {len(df)} rows inserted, with row_fp.")
         return
+
+    ensure_fingerprint_column_exists(table_name, dwh_engine)
 
     key_list = ", ".join(key_cols)
     query = f"SELECT {key_list} FROM {table_name}"
@@ -325,12 +467,11 @@ def load_new_fact_rows(df, table_name, key_cols, dwh_engine):
             name=table_name,
             con=dwh_engine,
             if_exists="append",
-            index=False
+            index=False,
         )
-        print(f"{len(df_new)} new rows inserted into {table_name}.")
+        print(f"{len(df_new)} new rows inserted into {table_name}, with row_fp.")
     else:
         print(f"No new rows to insert into {table_name}.")
-
 
 
 
