@@ -15,7 +15,7 @@ from dateutil.relativedelta import relativedelta
 # ---------------------------------------------------------
 
 # Update this to your real file path
-CSV_FILE_PATH = "/root/bt4301_group_project/BT4301-Project-Group-10/data/customer_churn_1M.csv"
+CSV_FILE_PATH = "/root/bt4301/BT4301-Project-Group-10/data/customer_churn_1M.csv"
 
 # Target MySQL data warehouse
 DATAWAREHOUSE_DB = "mysql://bt4301:password@localhost:3306/customer_churn"

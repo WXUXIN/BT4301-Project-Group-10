@@ -8,6 +8,7 @@ dataops/airflow/airflow.db
 dataops/airflow/airflow.cfg
 dataops/airflow/simple_auth_manager_passwords.json.generated
 dataops/airflow/webserver_config.py
+dataops/airflow/airflow.cfg
 dataops/airflow/unittests.cfg
 *.log
 

@@ -1,6 +1,5 @@
-# For home_credit_pipeline.ipynb
-pandas>=1.5.0
-numpy>=1.21.0
-sqlalchemy>=2.0.0
-mysql-connector-python>=8.0.0
-pymysql>=1.0.0
+pandas==2.1.4
+numpy==1.26.4
+SQLAlchemy==1.4.54
+mysql-connector-python==9.6.0
+PyMySQL==1.1.2
