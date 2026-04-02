@@ -15,7 +15,7 @@ from dateutil.relativedelta import relativedelta
 # ---------------------------------------------------------
 
 # Update this to your real file path
-CSV_FILE_PATH = "/root/bt4301-group10/BT4301-Project-Group-10/data/customer_churn_1M.csv"
+CSV_FILE_PATH = "/root/bt4301_group_project/BT4301-Project-Group-10/data/customer_churn_1M.csv"
 
 # Target MySQL data warehouse
 DATAWAREHOUSE_DB = "mysql://bt4301:password@localhost:3306/customer_churn"
@@ -403,7 +403,7 @@ def load_new_dimension_rows(
             index=False,
         )
         print(f"{table_name} created and {len(df)} rows inserted, with row_fp.")
-        return
+        return len(df)
 
     ensure_fingerprint_column_exists(table_name, dwh_engine)
 
@@ -424,8 +424,10 @@ def load_new_dimension_rows(
             index=False,
         )
         print(f"{len(df_new)} new rows inserted into {table_name}, with row_fp.")
+        return len(df_new)
     else:
         print(f"No new rows to insert into {table_name}.")
+        return 0
 
 
 def load_new_fact_rows(
@@ -451,7 +453,7 @@ def load_new_fact_rows(
             index=False,
         )
         print(f"{table_name} created and {len(df)} rows inserted, with row_fp.")
-        return
+        return len(df)
 
     ensure_fingerprint_column_exists(table_name, dwh_engine)
 
@@ -470,18 +472,128 @@ def load_new_fact_rows(
             index=False,
         )
         print(f"{len(df_new)} new rows inserted into {table_name}, with row_fp.")
+        return len(df_new)
     else:
         print(f"No new rows to insert into {table_name}.")
+        return 0
 
 
 
 
+# ---------------------------------------------------------
+# DATA LINEAGE
+# ---------------------------------------------------------
+
+LINEAGE_TABLE = "data_lineage_log"
 
 
+def ensure_lineage_table_exists(dwh_engine):
+    """
+    Create the lineage table if it does not already exist.
+    This table stores metadata about how each warehouse table was created. Can trace where data came from, what transformed it, 
+    how many rows moved, and whether it succeeded — essentially giving you full observability over your data pipeline.
+    """
+    create_sql = text(f"""
+    CREATE TABLE IF NOT EXISTS {LINEAGE_TABLE} (
+        lineage_id INT AUTO_INCREMENT PRIMARY KEY,
+        etl_run_id VARCHAR(100),
+        dag_id VARCHAR(100),
+        task_id VARCHAR(100),
+        source_name VARCHAR(255),
+        source_type VARCHAR(50),
+        target_table VARCHAR(100),
+        transformation_name VARCHAR(255),
+        period INT,
+        period_start_date DATE,
+        period_end_date DATE,
+        input_row_count INT,
+        output_row_count INT,
+        rows_inserted INT,
+        status VARCHAR(50),
+        log_timestamp DATETIME
+    )
+    """)
+    with dwh_engine.begin() as conn:
+        conn.execute(create_sql)
 
 
+def log_lineage(
+    dwh_engine,
+    etl_run_id,
+    dag_id,
+    task_id,
+    source_name,
+    source_type,
+    target_table,
+    transformation_name,
+    period,
+    period_start_date,
+    period_end_date,
+    input_row_count,
+    output_row_count,
+    rows_inserted,
+    status
+):
+    """
+    Insert one lineage record into the lineage table.
+    """
+    ensure_lineage_table_exists(dwh_engine)
 
+    insert_sql = text(f"""
+    INSERT INTO {LINEAGE_TABLE} (
+        etl_run_id,
+        dag_id,
+        task_id,
+        source_name,
+        source_type,
+        target_table,
+        transformation_name,
+        period,
+        period_start_date,
+        period_end_date,
+        input_row_count,
+        output_row_count,
+        rows_inserted,
+        status,
+        log_timestamp
+    )
+    VALUES (
+        :etl_run_id,
+        :dag_id,
+        :task_id,
+        :source_name,
+        :source_type,
+        :target_table,
+        :transformation_name,
+        :period,
+        :period_start_date,
+        :period_end_date,
+        :input_row_count,
+        :output_row_count,
+        :rows_inserted,
+        :status,
+        :log_timestamp
+    )
+    """)
 
+    with dwh_engine.begin() as conn:
+        conn.execute(insert_sql, {
+            "etl_run_id": etl_run_id,
+            "dag_id": dag_id,
+            "task_id": task_id,
+            "source_name": source_name,
+            "source_type": source_type,
+            "target_table": target_table,
+            "transformation_name": transformation_name,
+            "period": period,
+            "period_start_date": period_start_date,
+            "period_end_date": period_end_date,
+            "input_row_count": input_row_count,
+            "output_row_count": output_row_count,
+            "rows_inserted": rows_inserted,
+            "status": status,
+            "log_timestamp": datetime.now()
+        })
 
 
 

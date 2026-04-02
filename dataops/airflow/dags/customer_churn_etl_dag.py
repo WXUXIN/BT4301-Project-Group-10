@@ -15,7 +15,8 @@ from customer_churn_etl_functions import (
     transform_dim_behavior,
     transform_fact_customer_churn,
     load_new_dimension_rows,
-    load_new_fact_rows
+    load_new_fact_rows,
+    log_lineage
 )
 
 COUNTER_FILE = "/tmp/airflow_churn_period_counter.txt"
@@ -72,6 +73,12 @@ with DAG(
         start_date, end_date = get_period_date_range(period)
         print(f"Processing signup_date from {start_date} to {end_date}")
 
+        etl_run_id = f"period_{period}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        dag_id = "customer_churn_incremental_etl"
+        task_id = "etl_process"
+        source_name = "customer_churn_1M.csv"
+        source_type = "csv"
+
         # ==========================
         # EXTRACT
         # ==========================
@@ -81,7 +88,8 @@ with DAG(
             print("No rows found for this monthly period.")
             return
 
-        print(f"Extracted {len(df_batch)} rows.")
+        extracted_rows = len(df_batch)
+        print(f"Extracted {extracted_rows} rows.")
 
         # ==========================
         # TRANSFORM
@@ -93,44 +101,134 @@ with DAG(
         df_fact_churn = transform_fact_customer_churn(df_batch)
 
         # ==========================
-        # LOAD DIMENSIONS + WATERMARKING
+        # LOAD DIMENSIONS + WATERMARKING + LINEAGE
         # ==========================
-        load_new_dimension_rows(
+        inserted_dim_customer = load_new_dimension_rows(
             df_dim_customer,
             "dim_customer",
             ["customer_id"],
             dwh_engine
         )
 
-        load_new_dimension_rows(
+        log_lineage(
+            dwh_engine=dwh_engine,
+            etl_run_id=etl_run_id,
+            dag_id=dag_id,
+            task_id=task_id,
+            source_name=source_name,
+            source_type=source_type,
+            target_table="dim_customer",
+            transformation_name="transform_dim_customer",
+            period=period,
+            period_start_date=start_date.date(),
+            period_end_date=end_date.date(),
+            input_row_count=extracted_rows,
+            output_row_count=len(df_dim_customer),
+            rows_inserted=inserted_dim_customer,
+            status="success"
+        )
+
+        inserted_dim_account = load_new_dimension_rows(
             df_dim_account,
             "dim_account",
             ["customer_id"],
             dwh_engine
         )
 
-        load_new_dimension_rows(
+        log_lineage(
+            dwh_engine=dwh_engine,
+            etl_run_id=etl_run_id,
+            dag_id=dag_id,
+            task_id=task_id,
+            source_name=source_name,
+            source_type=source_type,
+            target_table="dim_account",
+            transformation_name="transform_dim_account",
+            period=period,
+            period_start_date=start_date.date(),
+            period_end_date=end_date.date(),
+            input_row_count=extracted_rows,
+            output_row_count=len(df_dim_account),
+            rows_inserted=inserted_dim_account,
+            status="success"
+        )
+
+        inserted_dim_service = load_new_dimension_rows(
             df_dim_service,
             "dim_service",
             ["customer_id"],
             dwh_engine
         )
 
-        load_new_dimension_rows(
+        log_lineage(
+            dwh_engine=dwh_engine,
+            etl_run_id=etl_run_id,
+            dag_id=dag_id,
+            task_id=task_id,
+            source_name=source_name,
+            source_type=source_type,
+            target_table="dim_service",
+            transformation_name="transform_dim_service",
+            period=period,
+            period_start_date=start_date.date(),
+            period_end_date=end_date.date(),
+            input_row_count=extracted_rows,
+            output_row_count=len(df_dim_service),
+            rows_inserted=inserted_dim_service,
+            status="success"
+        )
+
+        inserted_dim_behavior = load_new_dimension_rows(
             df_dim_behavior,
             "dim_behavior",
             ["customer_id"],
             dwh_engine
         )
 
+        log_lineage(
+            dwh_engine=dwh_engine,
+            etl_run_id=etl_run_id,
+            dag_id=dag_id,
+            task_id=task_id,
+            source_name=source_name,
+            source_type=source_type,
+            target_table="dim_behavior",
+            transformation_name="transform_dim_behavior",
+            period=period,
+            period_start_date=start_date.date(),
+            period_end_date=end_date.date(),
+            input_row_count=extracted_rows,
+            output_row_count=len(df_dim_behavior),
+            rows_inserted=inserted_dim_behavior,
+            status="success"
+        )
+
         # ==========================
         # LOAD FACT + WATERMARKING
         # ==========================
-        load_new_fact_rows(
+        inserted_fact = load_new_fact_rows(
             df_fact_churn,
             "fact_customer_churn",
             ["customer_id"],
             dwh_engine
+        )
+
+        log_lineage(
+            dwh_engine=dwh_engine,
+            etl_run_id=etl_run_id,
+            dag_id=dag_id,
+            task_id=task_id,
+            source_name=source_name,
+            source_type=source_type,
+            target_table="fact_customer_churn",
+            transformation_name="transform_fact_customer_churn",
+            period=period,
+            period_start_date=start_date.date(),
+            period_end_date=end_date.date(),
+            input_row_count=extracted_rows,
+            output_row_count=len(df_fact_churn),
+            rows_inserted=inserted_fact,
+            status="success"
         )
 
     period = get_current_period()
