@@ -77,22 +77,8 @@ If you use **Ubuntu in Docker**, run this inside the container so the notebook c
    In MySQL:
 
    ```sql
-   CREATE DATABASE home_credit;
-   USE home_credit;
-   ```
-
-2. **Configure connection in the code**
-
-   In the `dataops/home_credit_pipeline.ipynb` notebook, ensure the `MYSQL_CONFIG` (or equivalent config) matches your MySQL instance, for example:
-
-   ```python
-   MYSQL_CONFIG = {
-       "host": "localhost",
-       "user": "your_user",
-       "password": "your_password",
-       "database": "home_credit",
-       "port": 3306,
-   }
+   CREATE DATABASE customer_churn;
+   USE customer_churn;
    ```
 
 ### 5. SQLTools connection (view ingested tables)
@@ -111,7 +97,7 @@ Use **SQLTools** in Cursor/VS Code to connect to MySQL and view the tables after
      - **Port:** `3306`
      - **User:** same as in `MYSQL_CONFIG` (e.g. `bt4301`).
      - **Password:** same as in `MYSQL_CONFIG`.
-     - **Database:** `home_credit`
+     - **Database:** `customer_churn`
    - Give the connection a name (e.g. “Home Credit”) and save.
 
 3. **Connect and view tables**
@@ -204,6 +190,16 @@ Then open the UI at `http://localhost:8088` (api-server) or your webserver port.
 - **DAGs folder:** `dataops/airflow/dags`
 - **Logs:** `dataops/airflow/logs`
 - **Metadata DB:** MySQL `airflow_group10` (see above)
+
+**Customer churn DAG — reset the period counter**
+
+The `customer_churn_incremental_etl` DAG tracks which monthly `signup_date` slice to load next using a local file: `/tmp/airflow_churn_period_counter.txt`. To restart ingestion from **period 1** (e.g. after testing or reprocessing the CSV), remove that file on the **same machine** where the Airflow scheduler runs:
+
+```bash
+rm -f /tmp/airflow_churn_period_counter.txt
+```
+
+Wait until no run is in the middle of updating the counter before deleting it, so the next scheduled run starts cleanly from period 1.
 
 ### 7. Running the pipeline notebook
 
