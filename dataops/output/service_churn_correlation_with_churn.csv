@@ -1,0 +1,14 @@
+,correlation_with_churn
+has_tech_support,-0.04547698617663511
+has_online_security,-0.03410621224499965
+num_services_x_internet,-0.03395460555046816
+num_services,-0.03337763092707845
+high_service_count_flag,-0.027338667912119804
+has_internet_service,-0.015261448032357518
+phone_without_internet,0.011442942749629077
+has_online_backup,-0.004919450768678082
+has_device_protection,-0.004908193662943507
+has_phone_service,-0.002273511526027815
+has_streaming_movies,0.0019147700429882361
+has_streaming_tv,0.0006949999261211795
+service_diversity_index,0.0005227495771631401
