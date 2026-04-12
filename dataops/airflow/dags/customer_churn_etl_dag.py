@@ -15,7 +15,8 @@ from customer_churn_etl_functions import (
     transform_dim_behavior,
     transform_fact_customer_churn,
     load_new_dimension_rows,
-    load_new_fact_rows
+    load_new_fact_rows,
+    build_train_churn_model
 )
 
 COUNTER_FILE = "/tmp/airflow_churn_period_counter.txt"
@@ -130,6 +131,11 @@ with DAG(
             ["customer_id"],
             dwh_engine
         )
+
+        # ==========================
+        # BUILD TRAINING DATASET
+        # ==========================
+        build_train_churn_model(dwh_engine)
 
     period = get_current_period()
     etl_process(period)

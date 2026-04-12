@@ -133,7 +133,39 @@ def transform_dim_customer(df):
         dim_customer["annual_income"].median()
     )
 
+    # Feature Engineer --- age groups & tenure segments
+
+    # Age groups
+    age_bins = [0, 18, 30, 40, 50, 60, 70, 100]
+    age_labels = ['0-18', '18-29', '30-39', '40-49', '50-59', '60-69', '70+']
+    dim_customer['age_group'] = pd.cut(
+        dim_customer['age'],
+        bins=age_bins,
+        labels=age_labels,
+        right=True
+    )
+
+    # Tenure Segment
+    tenure_df = df[["customer_id", "tenure"]].copy()
+
+    dim_customer = dim_customer.merge(
+        tenure_df,
+        on="customer_id",
+        how="left"
+    )
+
+    tenure_bins = [0, 6, 24, 60, 100]
+    tenure_labels = ['Infant', 'Stable', 'Loyal', 'Veteran']
+    dim_customer['tenure_segment'] = pd.cut(
+        dim_customer['tenure'],
+        bins=tenure_bins,
+        labels=tenure_labels
+    )
+
+    # Drop tenure months since we have it in account df
+    dim_customer = dim_customer.drop(columns=["tenure"])
     dim_customer = dim_customer.drop_duplicates(subset=["customer_id"])
+
     return dim_customer
 
 
@@ -150,13 +182,9 @@ def transform_dim_account(df):
         "paperless_billing"
     ]].copy()
 
-    # # example engineered column                       # can decide if we want this column
-    # dim_account["tenure_group"] = pd.cut(
-    #     dim_account["tenure"],
-    #     bins=[0, 12, 24, 48, 72],
-    #     labels=["0_12", "13_24", "25_48", "49_72"],
-    #     include_lowest=True
-    # )
+    # Feature engineered --- 'is_auto_pay'
+    autopay_methods = {'credit_card', 'bank_transfer'}
+    dim_account['is_auto_pay'] = dim_account['payment_method'].isin(autopay_methods).astype(int)
 
     dim_account = dim_account.drop_duplicates(subset=["customer_id"])
     return dim_account
@@ -247,6 +275,51 @@ def transform_fact_customer_churn(df):
     return fact_customer_churn
 
 
+def build_train_churn_model(engine):
+    """
+    Build the final training dataset by joining fact + dimension tables.
+    This creates a denormalized feature table for ML.
+    """
+
+    query = """
+    SELECT
+        f.customer_id,
+        f.churn,
+        c.annual_income,
+        a.contract,
+        s.has_phone_service,
+        s.has_internet_service,
+        s.has_tech_support,
+        s.has_streaming_tv,
+        s.has_streaming_movies,
+        b.customer_satisfaction,
+        b.num_complaints,
+        b.num_service_calls,
+        b.late_payments,
+        b.high_risk_flag,
+        c.age_group,
+        c.tenure_segment,
+        a.is_auto_pay
+    FROM fact_customer_churn f
+    LEFT JOIN dim_customer  c ON f.customer_id = c.customer_id
+    LEFT JOIN dim_account   a ON f.customer_id = a.customer_id
+    LEFT JOIN dim_service   s ON f.customer_id = s.customer_id
+    LEFT JOIN dim_behavior  b ON f.customer_id = b.customer_id
+    """
+
+    df = pd.read_sql(query, engine)
+
+    print(f"Building train_churn_model with {len(df)} rows...")
+
+    df.to_sql(
+        'train_churn_model',
+        engine,
+        if_exists='replace',  
+        index=False,
+        chunksize=10000
+    )
+
+    print("train_churn_model table successfully built.")
 
 # ---------------------------------------------------------
 # LOAD HELPERS
@@ -330,7 +403,6 @@ def load_new_fact_rows(df, table_name, key_cols, dwh_engine):
         print(f"{len(df_new)} new rows inserted into {table_name}.")
     else:
         print(f"No new rows to insert into {table_name}.")
-
 
 
 
