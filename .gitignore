@@ -14,6 +14,9 @@ dataops/airflow/airflow.cfg
 dataops/airflow/unittests.cfg
 *.log
 
+mlflow-artifacts/
+mlflow.db
+
 # --- Python Virtual Environments ---
 # Ignore the virtual environment directory created in the activities
 python3venv/
