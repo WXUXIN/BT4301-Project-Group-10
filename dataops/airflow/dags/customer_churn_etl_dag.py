@@ -1,25 +1,8 @@
 from airflow import DAG
 from airflow.decorators import task
 from datetime import datetime
-from sqlalchemy import create_engine
 import os
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
-
-from customer_churn_etl_functions import (
-    DATAWAREHOUSE_DB,
-    get_period_date_range,
-    get_max_period,
-    extract_customer_churn_batch,
-    transform_dim_customer,
-    transform_dim_account,
-    transform_dim_service,
-    transform_dim_behavior,
-    transform_fact_customer_churn,
-    load_new_dimension_rows,
-    load_new_fact_rows,
-    log_lineage,
-    build_train_churn_model
-)
 
 COUNTER_FILE = "/tmp/airflow_churn_period_counter.txt"
 
@@ -61,6 +44,24 @@ with DAG(
         Row-level fingerprints are generated at load time for each inserted
         warehouse row to establish the trusted watermark baseline.
         """
+        # deferred imports: pandas, numpy, sqlalchemy loaded only at runtime
+        from sqlalchemy import create_engine
+        from customer_churn_etl_functions import (
+            DATAWAREHOUSE_DB,
+            get_period_date_range,
+            get_max_period,
+            extract_customer_churn_batch,
+            transform_dim_customer,
+            transform_dim_account,
+            transform_dim_service,
+            transform_dim_behavior,
+            transform_fact_customer_churn,
+            load_new_dimension_rows,
+            load_new_fact_rows,
+            log_lineage,
+            build_train_churn_model,
+        )
+
         max_period = get_max_period()
 
         # stop condition

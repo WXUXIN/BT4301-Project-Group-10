@@ -6,13 +6,10 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.exceptions import AirflowSkipException
 
-# make project root importable
+# make project root importable at parse time (lightweight — no heavy libs)
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from dataops.airflow.mlops.retrain_xgb_mlflow import retrain_and_register
-from dataops.airflow.mlops.monitor_model import log_monitor_snapshot
 
 with DAG(
     dag_id="customer_churn_mlops_pipeline",
@@ -25,6 +22,8 @@ with DAG(
 
     @task
     def retrain_if_needed():
+        # imports loaded only at runtime
+        from dataops.airflow.mlops.retrain_xgb_mlflow import retrain_and_register
         result = retrain_and_register()
         if result["action"] == "skip" if "action" in result else False:
             raise AirflowSkipException(result["reason"])
@@ -32,6 +31,8 @@ with DAG(
 
     @task
     def monitor():
+        # imports loaded only at runtime 
+        from dataops.airflow.mlops.monitor_model import log_monitor_snapshot
         return log_monitor_snapshot()
 
     retrain_result = retrain_if_needed()

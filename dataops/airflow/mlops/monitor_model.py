@@ -1,14 +1,19 @@
 from datetime import datetime
+import mlflow
 import pandas as pd
 from sqlalchemy import create_engine, text
 from mlflow import MlflowClient
 
 from dataops.airflow.mlops.mlops_config import (
     DATAWAREHOUSE_DB,
+    MLFLOW_TRACKING_URI,
     TRAIN_TABLE,
+    LINEAGE_TABLE,
     MONITOR_TABLE,
     REGISTERED_MODEL_NAME,
 )
+
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 def ensure_monitor_table():
     engine = create_engine(DATAWAREHOUSE_DB, echo=False)
@@ -35,9 +40,9 @@ def log_monitor_snapshot():
     engine = create_engine(DATAWAREHOUSE_DB, echo=False)
     df = pd.read_sql(text(f"SELECT * FROM {TRAIN_TABLE}"), con=engine)
 
-    latest_period_df = pd.read_sql(text("""
+    latest_period_df = pd.read_sql(text(f"""
         SELECT MAX(period) AS latest_period
-        FROM data_lineage_log
+        FROM {LINEAGE_TABLE}
         WHERE target_table = 'fact_customer_churn'
           AND status = 'success'
     """), con=engine)

@@ -1,0 +1,23 @@
+services:
+  churn-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: churn-api
+    ports:
+      - "8000:8000"
+    environment:
+      ARTIFACTS_DIR: /app/artifacts/current
+    volumes:
+      # Champion artifacts live on the HOST at ./deploy_to_production/artifacts/current/
+      # and are mounted read-only into the container.
+      # Run sync_champion_from_mlflow.py to update artifacts, then restart.
+      - ./artifacts/current:/app/artifacts/current:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

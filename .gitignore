@@ -23,6 +23,13 @@ venv/
 config.json
 credentials.txt
 
+# --- MLflow (local tracking DB and run artifacts) ---
+mlflow.db
+mlruns/
+
+# --- Production serving artifacts (synced locally by sync script, not committed) ---
+deploy_to_production/artifacts/
+
 # --- OS & IDE Specific ---
 # Ignore temporary files created by macOS, Windows, or VS Code
 .DS_Store

@@ -19,7 +19,7 @@ from sqlalchemy import text
 CSV_FILE_PATH = "/root/bt4301_group_project/BT4301-Project-Group-10/data/customer_churn_1M.csv"
 
 # Target MySQL data warehouse
-DATAWAREHOUSE_DB = "mysql://bt4301:password@localhost:3306/customer_churn"
+DATAWAREHOUSE_DB = "mysql+pymysql://bt4301:password@localhost:3306/customer_churn"
 
 
 # ---------------------------------------------------------

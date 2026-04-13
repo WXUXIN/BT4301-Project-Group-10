@@ -3,16 +3,8 @@ from datetime import datetime
 
 from airflow import DAG
 from airflow.decorators import task
-from sqlalchemy import create_engine
 
 logger = logging.getLogger(__name__)
-
-from customer_churn_etl_functions import DATAWAREHOUSE_DB
-from customer_churn_fingerprint_verification_functions import (
-    TABLES_FINGERPRINT_AUDIT,
-    verify_fingerprints_for_table,
-)
-
 
 
 with DAG(
@@ -29,6 +21,14 @@ with DAG(
         """
         For each table, re-hash business columns and compare to `row_fp`.
         """
+        # imports loaded only at runtime
+        from sqlalchemy import create_engine
+        from customer_churn_etl_functions import DATAWAREHOUSE_DB
+        from customer_churn_fingerprint_verification_functions import (
+            TABLES_FINGERPRINT_AUDIT,
+            verify_fingerprints_for_table,
+        )
+
         engine = create_engine(DATAWAREHOUSE_DB, echo=False)
 
         all_summaries = []

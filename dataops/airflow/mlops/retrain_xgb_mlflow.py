@@ -330,6 +330,8 @@ def retrain_and_register():
                     gamma=params.get("gamma", 3.09),
                     reg_alpha=params.get("reg_alpha", 1.66),
                     reg_lambda=params.get("reg_lambda", 3.22),
+                    subsample=params.get("subsample", 0.782678789545537),
+                    colsample_bytree=params.get("colsample_bytree", 0.8111691627386142),
                     scale_pos_weight=params.get("scale_pos_weight", scale_pos_weight),
                 )),
             ])
