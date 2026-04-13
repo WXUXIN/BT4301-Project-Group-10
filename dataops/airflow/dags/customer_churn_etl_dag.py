@@ -16,7 +16,14 @@ from customer_churn_etl_functions import (
     transform_fact_customer_churn,
     load_new_dimension_rows,
     load_new_fact_rows,
-    log_lineage
+    log_lineage,
+    build_train_churn_model
+)
+from customer_churn_mlops_functions import (
+    should_retrain,
+    next_retrain_period,
+    run_mlops_pipeline,
+    log_training_to_db,
 )
 
 COUNTER_FILE = "/tmp/airflow_churn_period_counter.txt"
@@ -230,9 +237,51 @@ with DAG(
             rows_inserted=inserted_fact,
             status="success"
         )
+        # ==========================
+        # BUILD TRAINING DATASET
+        # ==========================
+        build_train_churn_model(dwh_engine)
+
+        # Return period so the downstream MLOps task automatically
+        # depends on this task completing first.
+        return period
+
+    @task
+    def trigger_model_training(period):
+        """
+        Decide whether to retrain the XGBoost model based on the current period.
+
+        Retraining schedule: period 1 (initial), then 4, 7, 10, …
+        (every 3 ingested periods).  This task always runs after etl_process
+        because it receives `period` as the output of that task — Airflow
+        uses this data-flow dependency to enforce execution order.
+
+        When retraining is triggered:
+          1. run_mlops_pipeline loads the full train_churn_model table,
+             trains the pipeline, and logs everything to MLflow.
+          2. The new model version is compared against the current champion
+             and promoted if its ROC AUC is higher.
+          3. An audit record is written to mlops_training_log in MySQL.
+        """
+        if not should_retrain(period):
+            next_p = next_retrain_period(period)
+            print(
+                f"[MLOps] Period {period}: retraining not scheduled. "
+                f"Next retraining at period {next_p}."
+            )
+            return
+
+        print(f"[MLOps] Period {period}: retraining triggered.")
+        dwh_engine = create_engine(DATAWAREHOUSE_DB, echo=False)
+        run_id, metrics = run_mlops_pipeline(period, dwh_engine)
+        print(
+            f"[MLOps] Training complete for period {period}. "
+            f"ROC AUC={metrics['roc_auc']:.4f}  |  run_id={run_id}"
+        )
 
     period = get_current_period()
-    etl_process(period)
+    trained_period = etl_process(period)
+    trigger_model_training(trained_period)
 
 
 
