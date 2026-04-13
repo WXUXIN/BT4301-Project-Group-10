@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import inspect, text
 from dateutil.relativedelta import relativedelta
+from sqlalchemy import text
 
 
 # ---------------------------------------------------------
@@ -15,7 +16,7 @@ from dateutil.relativedelta import relativedelta
 # ---------------------------------------------------------
 
 # Update this to your real file path
-CSV_FILE_PATH = "/root/bt4301/BT4301-Project-Group-10/data/customer_churn_1M.csv"
+CSV_FILE_PATH = "/root/bt4301_group_project/BT4301-Project-Group-10/data/customer_churn_1M.csv"
 
 # Target MySQL data warehouse
 DATAWAREHOUSE_DB = "mysql://bt4301:password@localhost:3306/customer_churn"
@@ -401,51 +402,107 @@ def ensure_fingerprint_column_exists(table_name, dwh_engine):
         print(f"Added {fingerprint_column} column to {table_name}.")
 
 
-def build_train_churn_model(engine):
-    """
-    Build the final training dataset by joining fact + dimension tables.
-    This creates a denormalized feature table for ML.
-    """
+# def build_train_churn_model(engine):
+#     """
+#     Build the final training dataset by joining fact + dimension tables.
+#     This creates a denormalized feature table for ML.
+#     """
 
-    query = """
+#     query = """
+#     SELECT
+#         f.customer_id,
+#         f.churn,
+#         c.annual_income,
+#         a.contract,
+#         s.has_phone_service,
+#         s.has_internet_service,
+#         s.has_tech_support,
+#         s.has_streaming_tv,
+#         s.has_streaming_movies,
+#         b.customer_satisfaction,
+#         b.num_complaints,
+#         b.num_service_calls,
+#         b.late_payments,
+#         b.high_risk_flag,
+#         c.age_group,
+#         c.tenure_segment,
+#         a.is_auto_pay
+#     FROM fact_customer_churn f
+#     LEFT JOIN dim_customer  c ON f.customer_id = c.customer_id
+#     LEFT JOIN dim_account   a ON f.customer_id = a.customer_id
+#     LEFT JOIN dim_service   s ON f.customer_id = s.customer_id
+#     LEFT JOIN dim_behavior  b ON f.customer_id = b.customer_id
+#     """
+
+#     df = pd.read_sql(query, engine)
+
+#     print(f"Building train_churn_model with {len(df)} rows...")
+
+#     df.to_sql(
+#         'train_churn_model',
+#         engine,
+#         if_exists='replace',  
+#         index=False,
+#         chunksize=10000
+#     )
+
+#     print("train_churn_model table successfully built.")
+
+
+
+def build_train_churn_model(dwh_engine):
+    drop_sql = text("DROP TABLE IF EXISTS train_churn_model")
+
+    create_sql = text("""
+    CREATE TABLE train_churn_model AS
     SELECT
-        f.customer_id,
-        f.churn,
-        c.annual_income,
-        a.contract,
-        s.has_phone_service,
-        s.has_internet_service,
-        s.has_tech_support,
-        s.has_streaming_tv,
-        s.has_streaming_movies,
-        b.customer_satisfaction,
-        b.num_complaints,
-        b.num_service_calls,
-        b.late_payments,
-        b.high_risk_flag,
-        c.age_group,
-        c.tenure_segment,
-        a.is_auto_pay
-    FROM fact_customer_churn f
-    LEFT JOIN dim_customer  c ON f.customer_id = c.customer_id
-    LEFT JOIN dim_account   a ON f.customer_id = a.customer_id
-    LEFT JOIN dim_service   s ON f.customer_id = s.customer_id
-    LEFT JOIN dim_behavior  b ON f.customer_id = b.customer_id
-    """
+        dc.customer_id,
+        dc.signup_date,
+        TIMESTAMPDIFF(
+            MONTH,
+            (SELECT MIN(signup_date) FROM dim_customer),
+            dc.signup_date
+        ) + 1 AS ingestion_period,
+        fc.churn,
+        dc.annual_income,
+        da.contract,
+        ds.has_phone_service,
+        ds.has_internet_service,
+        ds.has_tech_support,
+        ds.has_streaming_tv,
+        ds.has_streaming_movies,
+        db.customer_satisfaction,
+        db.num_complaints,
+        db.num_service_calls,
+        db.late_payments,
+        db.high_risk_flag,
+        CASE
+            WHEN dc.age < 30 THEN 0
+            WHEN dc.age < 50 THEN 1
+            ELSE 2
+        END AS age_group,
+        CASE
+            WHEN da.tenure < 12 THEN 0
+            WHEN da.tenure < 24 THEN 1
+            ELSE 2
+        END AS tenure_segment,
+        CASE
+            WHEN LOWER(da.payment_method) LIKE '%auto%'
+              OR LOWER(da.payment_method) LIKE '%automatic%'
+            THEN 1 ELSE 0
+        END AS is_auto_pay
+    FROM dim_customer dc
+    JOIN dim_account da ON dc.customer_id = da.customer_id
+    JOIN dim_service ds ON dc.customer_id = ds.customer_id
+    JOIN dim_behavior db ON dc.customer_id = db.customer_id
+    JOIN fact_customer_churn fc ON dc.customer_id = fc.customer_id
+    """)
 
-    df = pd.read_sql(query, engine)
+    with dwh_engine.begin() as conn:
+        conn.execute(drop_sql)
+        conn.execute(create_sql)
 
-    print(f"Building train_churn_model with {len(df)} rows...")
-
-    df.to_sql(
-        'train_churn_model',
-        engine,
-        if_exists='replace',  
-        index=False,
-        chunksize=10000
-    )
-
-    print("train_churn_model table successfully built.")
+    print("train_churn_model rebuilt successfully.")
 
 # ---------------------------------------------------------
 # LOAD HELPERS

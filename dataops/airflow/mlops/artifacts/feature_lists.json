@@ -1,0 +1,43 @@
+{
+  "numeric": [
+    "customer_satisfaction",
+    "num_complaints",
+    "num_service_calls",
+    "late_payments"
+  ],
+  "binary": [
+    "has_phone_service",
+    "has_internet_service",
+    "has_tech_support",
+    "has_streaming_tv",
+    "has_streaming_movies",
+    "high_risk_flag",
+    "is_auto_pay"
+  ],
+  "ordinal": [
+    "tenure_segment"
+  ],
+  "nominal": [
+    "contract"
+  ],
+  "all": [
+    "customer_satisfaction",
+    "num_complaints",
+    "num_service_calls",
+    "late_payments",
+    "has_phone_service",
+    "has_internet_service",
+    "has_tech_support",
+    "has_streaming_tv",
+    "has_streaming_movies",
+    "high_risk_flag",
+    "is_auto_pay",
+    "tenure_segment",
+    "contract"
+  ],
+  "dropped": [
+    "annual_income",
+    "age_group"
+  ],
+  "vif_flagged": []
+}

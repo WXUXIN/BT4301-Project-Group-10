@@ -1,0 +1,16 @@
+{
+  "model": "XGBoost",
+  "params": {
+    "n_estimators": 373,
+    "max_depth": 3,
+    "learning_rate": 0.05623620173745784,
+    "subsample": 0.782678789545537,
+    "colsample_bytree": 0.8111691627386142,
+    "min_child_weight": 48,
+    "gamma": 3.0897457799952854,
+    "reg_alpha": 1.6575862542719726,
+    "reg_lambda": 3.220311781475361
+  },
+  "threshold": 0.5700000000000001,
+  "val_roc_auc": 0.6791504897425474
+}

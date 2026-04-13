@@ -3,6 +3,7 @@ from airflow.decorators import task
 from datetime import datetime
 from sqlalchemy import create_engine
 import os
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 
 from customer_churn_etl_functions import (
     DATAWAREHOUSE_DB,
@@ -237,7 +238,18 @@ with DAG(
         build_train_churn_model(dwh_engine)
 
     period = get_current_period()
-    etl_process(period)
+    etl_done = etl_process(period)
+
+    trigger_mlops = TriggerDagRunOperator(
+        task_id="trigger_mlops_pipeline",
+        trigger_dag_id="customer_churn_mlops_pipeline",
+    )
+
+    @task
+    def confirm_trigger():
+        print("✅ MLOps DAG trigger executed")
+
+    etl_done >> trigger_mlops >> confirm_trigger()
 
 
 
