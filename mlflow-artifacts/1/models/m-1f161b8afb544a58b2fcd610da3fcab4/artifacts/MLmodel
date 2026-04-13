@@ -1,0 +1,45 @@
+artifact_path: /root/bt4301/BT4301-Project-Group-10/mlflow-artifacts/1/models/m-1f161b8afb544a58b2fcd610da3fcab4/artifacts
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.10.8
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.7.2
+    skops_trusted_types: null
+is_signature_from_type_hint: false
+mlflow_version: 3.11.1
+model_id: m-1f161b8afb544a58b2fcd610da3fcab4
+model_size_bytes: 360331
+model_uuid: m-1f161b8afb544a58b2fcd610da3fcab4
+prompts: null
+run_id: 2eb7947327114137ba97e060714830e2
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  serving_input_path: serving_input_example.json
+  type: dataframe
+signature:
+  inputs: '[{"type": "string", "name": "contract", "required": true}, {"type": "string",
+    "name": "age_group", "required": true}, {"type": "string", "name": "tenure_segment",
+    "required": true}, {"type": "double", "name": "annual_income", "required": true},
+    {"type": "double", "name": "customer_satisfaction", "required": true}, {"type":
+    "double", "name": "num_complaints", "required": true}, {"type": "long", "name":
+    "num_service_calls", "required": true}, {"type": "long", "name": "late_payments",
+    "required": true}, {"type": "long", "name": "has_phone_service", "required": true},
+    {"type": "long", "name": "has_internet_service", "required": true}, {"type": "long",
+    "name": "has_tech_support", "required": true}, {"type": "long", "name": "has_streaming_tv",
+    "required": true}, {"type": "long", "name": "has_streaming_movies", "required":
+    true}, {"type": "long", "name": "high_risk_flag", "required": true}, {"type":
+    "long", "name": "is_auto_pay", "required": true}]'
+  outputs: '[{"type": "long", "required": true}]'
+  params: null
+type_hint_from_example: false
+utc_time_created: '2026-04-13 04:47:52.078803'
