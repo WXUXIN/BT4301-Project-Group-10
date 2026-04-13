@@ -5,11 +5,16 @@ dataops/airflow/staging/
 # --- Airflow (logs, local DB, generated/sensitive) ---
 dataops/airflow/logs/
 dataops/airflow/airflow.db
+dataops/airflow/airflow.db-shm
+dataops/airflow/airflow.db-wal
 dataops/airflow/airflow.cfg
 dataops/airflow/simple_auth_manager_passwords.json.generated
 dataops/airflow/webserver_config.py
 dataops/airflow/unittests.cfg
 *.log
+
+mlflow-artifacts/
+mlflow.db
 
 # --- Python Virtual Environments ---
 # Ignore the virtual environment directory created in the activities
