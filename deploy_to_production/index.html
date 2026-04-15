@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Churn API Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
+        .risk-row { color: red; font-weight: bold; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f4f4f4; }
+    </style>
+</head>
+<body>
+    <h1>Churn Prediction Dashboard</h1>
+    <button onclick="fetchPredictions()">Run Predictions</button>
+    <p id="status">Click the button to connect...</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Customer ID</th>
+                <th>Probability</th>
+                <th>Prediction</th>
+                <th>Risk Tier</th>
+            </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+    </table>
+
+    <script>
+        // // Sample data matching your CustomerFeatures Pydantic model
+        // const customerData = [
+        //     { customer_satisfaction: 2.0, num_complaints: 5, num_service_calls: 8, late_payments: 3, has_phone_service: 1, has_internet_service: 1, has_tech_support: 0, has_streaming_tv: 1, has_streaming_movies: 1, high_risk_flag: 1, is_auto_pay: 0, tenure_segment: 0, contract: "month_to_month" },
+        //     { customer_satisfaction: 9.0, num_complaints: 0, num_service_calls: 0, late_payments: 0, has_phone_service: 1, has_internet_service: 1, has_tech_support: 1, has_streaming_tv: 1, has_streaming_movies: 1, high_risk_flag: 0, is_auto_pay: 1, tenure_segment: 2, contract: "two_year" }
+        // ];
+
+        async function fetchPredictions() {
+            const status = document.getElementById('status');
+            const tbody = document.getElementById('results-body');
+            status.innerText = "Loading data from JSON file...";
+            tbody.innerHTML = "";
+
+            try {
+                // Fetch data from API endpoint
+                // const dataResponse = await fetch('http://localhost:8000/fetch-latest-data');
+
+                // 1. Load the data from your local JSON file
+                const dataResponse = await fetch('latest_predictions_input.json');
+                if (!dataResponse.ok) throw new Error("Could not find latest_predictions_input.json");
+                
+                const customerData = await dataResponse.json();
+                status.innerText = `Loaded ${customerData.length} customers. Connecting to API...`;
+
+                // 2. Send that data to your FastAPI backend
+                const apiResponse = await fetch('http://localhost:8000/predict-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(customerData)
+                });
+
+                if (!apiResponse.ok) {
+                    const errorDetail = await apiResponse.json(); 
+                    console.log("FULL ERROR FROM SERVER:", errorDetail); // <--- CHECK YOUR BROWSER CONSOLE
+                    throw new Error(`Server Error: ${apiResponse.status}`);
+                }                
+                const result = await apiResponse.json();
+                status.innerText = `Connected! Model Version: ${result.champion_version}`;
+
+                // 3. Render the results
+                result.predictions.forEach((pred, index) => {
+                    const CID = customerData[index].customer_id;
+                    if (pred.churn_prediction === 1) {
+                        const row = `<tr>
+                            <td>${CID}</td>
+                            <td>${(pred.churn_probability * 100).toFixed(1)}%</td>
+                            <td class="risk-row">${pred.churn_prediction} (At Risk)</td>
+                            <td>${pred.risk_tier}</td>
+                        </tr>`;
+                        tbody.innerHTML += row;
+                    }
+                });
+
+                if (tbody.innerHTML === "") {
+                    tbody.innerHTML = "<tr><td colspan='4'>No high-risk customers found in this batch.</td></tr>";
+                }
+
+            } catch (err) {
+                status.innerText = "Error: " + err.message;
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>

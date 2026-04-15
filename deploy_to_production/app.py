@@ -6,16 +6,20 @@ Run via Docker:
     docker compose -f deploy_to_production/compose.yaml up -d
 """
 from __future__ import annotations
-
+from fastapi.middleware.cors import CORSMiddleware
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 import joblib
 import pandas as pd
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from sqlalchemy import create_engine
+import json
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -41,6 +45,13 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # ---------------------------------------------------------------------------
 # Global state — loaded once at startup
 # ---------------------------------------------------------------------------
@@ -148,17 +159,11 @@ class CustomerFeatures(BaseModel):
     is_auto_pay: int = Field(..., ge=0, le=1, example=1)
 
     # ordinal / categorical
-    tenure_segment: int = Field(
-        ...,
-        ge=0,
-        example=2,
-        description="Tenure bucket: 0 (<12 months), 1 (12–24 months), 2 (>24 months)",
+    tenure_segment: Literal['Infant', 'Stable', 'Loyal', 'Veteran'] = Field(
+        ..., 
+        description="Tenure category from dim_customer"
     )
-    contract: str = Field(
-        ...,
-        example="one_year",
-        description="Contract type: 'month_to_month', 'one_year', 'two_year'",
-    )
+    contract: Literal['month_to_month', 'one_year', 'two_year'] = Field(...)
 
     class Config:
         extra = "allow"  # extra keys are accepted but ignored
@@ -336,3 +341,29 @@ def predict_batch(payloads: List[CustomerFeatures]):
         "count": len(results),
         "predictions": results.to_dict(orient="records"),
     }
+
+@app.get("/fetch-latest-data")
+def fetch_latest_from_db():
+    USER, PASSWORD, HOST, DB = 'bt4301', 'password', 'localhost', 'customer_churn'
+    engine = create_engine(f'mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}')
+    query = """
+    SELECT 
+        t.customer_id,
+        t.customer_satisfaction, t.num_complaints, t.num_service_calls, 
+        t.late_payments, t.has_phone_service, t.has_internet_service, 
+        t.has_tech_support, t.has_streaming_tv, t.has_streaming_movies, 
+        t.high_risk_flag, t.is_auto_pay, t.tenure_segment, t.contract
+    FROM train_churn_model t
+    JOIN dim_customer c ON t.customer_id = c.customer_id
+    WHERE c.signup_date >= (
+        SELECT DATE_SUB(MAX(signup_date), INTERVAL 2 DAY) 
+        FROM dim_customer
+    )
+    """
+    df = pd.read_sql(query, engine)
+    df = df.fillna({
+        'contract': 'month_to_month',
+        'customer_satisfaction': 0.0
+    }).fillna(0)
+    
+    return df.to_dict(orient="records")
