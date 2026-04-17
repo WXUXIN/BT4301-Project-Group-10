@@ -16,7 +16,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Linting Tools
-        run: pip install flake8 black
+        run: pip install "black[jupyter]" flake8
 
       - name: Check Code Format (Black)
         run: black --check .

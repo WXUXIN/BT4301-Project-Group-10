@@ -342,28 +342,28 @@ def predict_batch(payloads: List[CustomerFeatures]):
         "predictions": results.to_dict(orient="records"),
     }
 
-@app.get("/fetch-latest-data")
-def fetch_latest_from_db():
-    USER, PASSWORD, HOST, DB = 'bt4301', 'password', 'localhost', 'customer_churn'
-    engine = create_engine(f'mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}')
-    query = """
-    SELECT 
-        t.customer_id,
-        t.customer_satisfaction, t.num_complaints, t.num_service_calls, 
-        t.late_payments, t.has_phone_service, t.has_internet_service, 
-        t.has_tech_support, t.has_streaming_tv, t.has_streaming_movies, 
-        t.high_risk_flag, t.is_auto_pay, t.tenure_segment, t.contract
-    FROM train_churn_model t
-    JOIN dim_customer c ON t.customer_id = c.customer_id
-    WHERE c.signup_date >= (
-        SELECT DATE_SUB(MAX(signup_date), INTERVAL 2 DAY) 
-        FROM dim_customer
-    )
-    """
-    df = pd.read_sql(query, engine)
-    df = df.fillna({
-        'contract': 'month_to_month',
-        'customer_satisfaction': 0.0
-    }).fillna(0)
+# @app.get("/fetch-latest-data")
+# def fetch_latest_from_db():
+#     USER, PASSWORD, HOST, DB = 'bt4301', 'password', 'localhost', 'customer_churn'
+#     engine = create_engine(f'mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}')
+#     query = """
+#     SELECT 
+#         t.customer_id,
+#         t.customer_satisfaction, t.num_complaints, t.num_service_calls, 
+#         t.late_payments, t.has_phone_service, t.has_internet_service, 
+#         t.has_tech_support, t.has_streaming_tv, t.has_streaming_movies, 
+#         t.high_risk_flag, t.is_auto_pay, t.tenure_segment, t.contract
+#     FROM train_churn_model t
+#     JOIN dim_customer c ON t.customer_id = c.customer_id
+#     WHERE c.signup_date >= (
+#         SELECT DATE_SUB(MAX(signup_date), INTERVAL 2 DAY) 
+#         FROM dim_customer
+#     )
+#     """
+#     df = pd.read_sql(query, engine)
+#     df = df.fillna({
+#         'contract': 'month_to_month',
+#         'customer_satisfaction': 0.0
+#     }).fillna(0)
     
-    return df.to_dict(orient="records")
+#     return df.to_dict(orient="records")
