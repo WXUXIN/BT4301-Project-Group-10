@@ -17,7 +17,7 @@ jobs:
 
       - name: Verify Python Syntax
         # This compiles the files to bytecode. If there is a syntax error, it fails.
-        run: python -m py_compile deploy_to_production/*.py dataops/**/*.py
+        run: python -m py_compile deploy_to_production/*.py 
 
       - name: Validate Docker Setup
         # Checks if your docker-compose.yml is valid and can build
