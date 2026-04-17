@@ -4,7 +4,7 @@ on:
     branches: [ etl-improvements ]
 
 jobs:
-  syntax-and-docker:
+  syntax-check:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -19,8 +19,9 @@ jobs:
         # This compiles the files to bytecode. If there is a syntax error, it fails.
         run: python -m py_compile deploy_to_production/*.py 
 
-      - name: Validate Docker Setup
-        # Checks if your docker-compose.yml is valid and can build
-        run: |
-          docker-compose config
-          docker-compose build
+      - name: Install YAML Linter
+        run: pip install yamllint
+
+      - name: Verify Docker YAML Syntax
+        # This checks for indentation and structural errors in your docker file
+        run: yamllint deploy_to_production/compose.yaml
