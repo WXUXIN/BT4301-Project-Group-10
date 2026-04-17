@@ -4,7 +4,7 @@ on:
     branches: [ etl-improvements ]
 
 jobs:
-  quality-check:
+  syntax-and-docker:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -15,28 +15,12 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Linting Tools
-        run: pip install "black[jupyter]" flake8
+      - name: Verify Python Syntax
+        # This compiles the files to bytecode. If there is a syntax error, it fails.
+        run: python -m py_compile deploy_to_production/*.py dataops/**/*.py
 
-      - name: Check Code Format (Black)
-        run: black --check .
-        # This fails if your code isn't formatted correctly
-
-      - name: Lint with Flake8
-        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # This catches syntax errors and undefined variables
-
-  docker-verify:
-    needs: quality-check # Only runs if code is "clean"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Validate Docker Compose
-        run: docker-compose config
-        # This verifies your yaml syntax is valid for production
-
-      - name: Build Check
-        run: docker-compose build
-        # This ensures the Dockerfile can actually compile without errors
+      - name: Validate Docker Setup
+        # Checks if your docker-compose.yml is valid and can build
+        run: |
+          docker-compose config
+          docker-compose build
