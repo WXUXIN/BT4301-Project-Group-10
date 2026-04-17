@@ -10,13 +10,14 @@ from sqlalchemy import inspect, text
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import text
 
-
 # ---------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------
 
 # Update this to your real file path
-CSV_FILE_PATH = "/root/bt4301_group_project/BT4301-Project-Group-10/data/customer_churn_1M.csv"
+CSV_FILE_PATH = (
+    "/root/bt4301_group_project/BT4301-Project-Group-10/data/customer_churn_1M.csv"
+)
 
 # Target MySQL data warehouse
 DATAWAREHOUSE_DB = "mysql+pymysql://bt4301:password@localhost:3306/customer_churn"
@@ -26,6 +27,7 @@ DATAWAREHOUSE_DB = "mysql+pymysql://bt4301:password@localhost:3306/customer_chur
 # PERIOD LOGIC
 # ---------------------------------------------------------
 
+
 def get_base_signup_date():
     """
     Read only the signup_date column from the CSV and return
@@ -34,9 +36,7 @@ def get_base_signup_date():
     This becomes the starting point for period 1.
     """
     df_dates = pd.read_csv(
-        CSV_FILE_PATH,
-        usecols=["signup_date"],
-        parse_dates=["signup_date"]
+        CSV_FILE_PATH, usecols=["signup_date"], parse_dates=["signup_date"]
     )
 
     base_date = df_dates["signup_date"].min()
@@ -56,7 +56,9 @@ def get_period_date_range(period):
     """
     base_date = get_base_signup_date()
 
-    start_date = base_date + relativedelta(months=period - 1)       # eg. start_date = month 3 and end_date = month 4
+    start_date = base_date + relativedelta(
+        months=period - 1
+    )  # eg. start_date = month 3 and end_date = month 4
     end_date = base_date + relativedelta(months=period)
 
     return start_date, end_date
@@ -68,22 +70,23 @@ def get_max_period():
     based on the minimum and maximum signup_date.
     """
     df_dates = pd.read_csv(
-        CSV_FILE_PATH,
-        usecols=["signup_date"],
-        parse_dates=["signup_date"]
+        CSV_FILE_PATH, usecols=["signup_date"], parse_dates=["signup_date"]
     )
 
     min_date = df_dates["signup_date"].min()
     max_date = df_dates["signup_date"].max()
 
     # count number of months between min and max
-    total_months = (max_date.year - min_date.year) * 12 + (max_date.month - min_date.month) + 1
+    total_months = (
+        (max_date.year - min_date.year) * 12 + (max_date.month - min_date.month) + 1
+    )
     return total_months
 
 
 # ---------------------------------------------------------
 # EXTRACT
 # ---------------------------------------------------------
+
 
 def extract_customer_churn_batch(start_date, end_date, chunksize=100000):
     """
@@ -94,14 +97,11 @@ def extract_customer_churn_batch(start_date, end_date, chunksize=100000):
     """
     batch_list = []
 
-    for chunk in pd.read_csv(           # reads all the 1,000,000 rows but in 100,000 chunks
-        CSV_FILE_PATH,
-        parse_dates=["signup_date"],
-        chunksize=chunksize
+    for chunk in pd.read_csv(  # reads all the 1,000,000 rows but in 100,000 chunks
+        CSV_FILE_PATH, parse_dates=["signup_date"], chunksize=chunksize
     ):
-        filtered_chunk = chunk[        # filters each chunk based on whether its between start_date and end_date
-            (chunk["signup_date"] >= start_date) &
-            (chunk["signup_date"] < end_date)
+        filtered_chunk = chunk[  # filters each chunk based on whether its between start_date and end_date
+            (chunk["signup_date"] >= start_date) & (chunk["signup_date"] < end_date)
         ].copy()
 
         if not filtered_chunk.empty:
@@ -119,27 +119,34 @@ def extract_customer_churn_batch(start_date, end_date, chunksize=100000):
 # TRANSFORM
 # ---------------------------------------------------------
 
+
 def transform_dim_customer(df):
     """
     Build the customer dimension.
     These are mostly demographic/customer profile attributes.
     """
-    dim_customer = df[[         # Picks only the profile columns from the raw dataframe. .copy() creates an independent copy so any changes don't affect the original df.
-        "customer_id",
-        "signup_date",
-        "age",
-        "gender",
-        "annual_income",
-        "education",
-        "marital_status",
-        "dependents",
-        "senior_citizen"
-    ]].copy()
+    dim_customer = df[
+        [  # Picks only the profile columns from the raw dataframe. .copy() creates an independent copy so any changes don't affect the original df.
+            "customer_id",
+            "signup_date",
+            "age",
+            "gender",
+            "annual_income",
+            "education",
+            "marital_status",
+            "dependents",
+            "senior_citizen",
+        ]
+    ].copy()
 
-    dim_customer["signup_date"] = pd.to_datetime(dim_customer["signup_date"]).dt.normalize()
+    dim_customer["signup_date"] = pd.to_datetime(
+        dim_customer["signup_date"]
+    ).dt.normalize()
 
     for col in ("age", "dependents", "senior_citizen"):
-        dim_customer[col] = pd.to_numeric(dim_customer[col], errors="coerce").astype("Int64")
+        dim_customer[col] = pd.to_numeric(dim_customer[col], errors="coerce").astype(
+            "Int64"
+        )
 
     # simple missing value handling
     dim_customer["annual_income"] = dim_customer["annual_income"].fillna(
@@ -150,29 +157,20 @@ def transform_dim_customer(df):
 
     # Age groups
     age_bins = [0, 18, 30, 40, 50, 60, 70, 100]
-    age_labels = ['0-18', '18-29', '30-39', '40-49', '50-59', '60-69', '70+']
-    dim_customer['age_group'] = pd.cut(
-        dim_customer['age'],
-        bins=age_bins,
-        labels=age_labels,
-        right=True
+    age_labels = ["0-18", "18-29", "30-39", "40-49", "50-59", "60-69", "70+"]
+    dim_customer["age_group"] = pd.cut(
+        dim_customer["age"], bins=age_bins, labels=age_labels, right=True
     )
 
     # Tenure Segment
     tenure_df = df[["customer_id", "tenure"]].copy()
 
-    dim_customer = dim_customer.merge(
-        tenure_df,
-        on="customer_id",
-        how="left"
-    )
+    dim_customer = dim_customer.merge(tenure_df, on="customer_id", how="left")
 
     tenure_bins = [0, 6, 24, 60, 100]
-    tenure_labels = ['Infant', 'Stable', 'Loyal', 'Veteran']
-    dim_customer['tenure_segment'] = pd.cut(
-        dim_customer['tenure'],
-        bins=tenure_bins,
-        labels=tenure_labels
+    tenure_labels = ["Infant", "Stable", "Loyal", "Veteran"]
+    dim_customer["tenure_segment"] = pd.cut(
+        dim_customer["tenure"], bins=tenure_bins, labels=tenure_labels
     )
 
     # Drop tenure months since we have it in account df
@@ -187,17 +185,15 @@ def transform_dim_account(df):
     Build the account dimension.
     These are account/contract-related features.
     """
-    dim_account = df[[
-        "customer_id",
-        "tenure",
-        "contract",
-        "payment_method",
-        "paperless_billing"
-    ]].copy()
+    dim_account = df[
+        ["customer_id", "tenure", "contract", "payment_method", "paperless_billing"]
+    ].copy()
 
     # Feature engineered --- 'is_auto_pay'
-    autopay_methods = {'credit_card', 'bank_transfer'}
-    dim_account['is_auto_pay'] = dim_account['payment_method'].isin(autopay_methods).astype(int)
+    autopay_methods = {"credit_card", "bank_transfer"}
+    dim_account["is_auto_pay"] = (
+        dim_account["payment_method"].isin(autopay_methods).astype(int)
+    )
 
     dim_account = dim_account.drop_duplicates(subset=["customer_id"])
     return dim_account
@@ -208,18 +204,20 @@ def transform_dim_service(df):
     Build the service dimension.
     These are the subscribed services for each customer / usage setup features.
     """
-    dim_service = df[[
-        "customer_id",
-        "num_services",
-        "has_phone_service",
-        "has_internet_service",
-        "has_online_security",
-        "has_online_backup",
-        "has_device_protection",
-        "has_tech_support",
-        "has_streaming_tv",
-        "has_streaming_movies"
-    ]].copy()
+    dim_service = df[
+        [
+            "customer_id",
+            "num_services",
+            "has_phone_service",
+            "has_internet_service",
+            "has_online_security",
+            "has_online_backup",
+            "has_device_protection",
+            "has_tech_support",
+            "has_streaming_tv",
+            "has_streaming_movies",
+        ]
+    ].copy()
 
     dim_service = dim_service.drop_duplicates(subset=["customer_id"])
     return dim_service
@@ -230,24 +228,28 @@ def transform_dim_behavior(df):
     Build the behavior dimension.
     These are behavioral and risk-related features.
     """
-    dim_behavior = df[[
-        "customer_id",
-        "customer_satisfaction",
-        "num_complaints",
-        "num_service_calls",
-        "late_payments",
-        "avg_monthly_gb",
-        "days_since_last_interaction",
-        "credit_score"
-    ]].copy()
+    dim_behavior = df[
+        [
+            "customer_id",
+            "customer_satisfaction",
+            "num_complaints",
+            "num_service_calls",
+            "late_payments",
+            "avg_monthly_gb",
+            "days_since_last_interaction",
+            "credit_score",
+        ]
+    ].copy()
 
     # simple missing value handling
-    dim_behavior["customer_satisfaction"] = dim_behavior["customer_satisfaction"].fillna(
-        dim_behavior["customer_satisfaction"].median()
-    )
+    dim_behavior["customer_satisfaction"] = dim_behavior[
+        "customer_satisfaction"
+    ].fillna(dim_behavior["customer_satisfaction"].median())
     dim_behavior["num_complaints"] = dim_behavior["num_complaints"].fillna(0)
 
-    dim_behavior["avg_monthly_gb"] = dim_behavior["avg_monthly_gb"].fillna(     # Median is more representative of what a normal customer uses rather than being pulled up by those heavy users.
+    dim_behavior["avg_monthly_gb"] = dim_behavior[
+        "avg_monthly_gb"
+    ].fillna(  # Median is more representative of what a normal customer uses rather than being pulled up by those heavy users.
         dim_behavior["avg_monthly_gb"].median()
     )
     dim_behavior["credit_score"] = dim_behavior["credit_score"].fillna(
@@ -256,9 +258,9 @@ def transform_dim_behavior(df):
 
     # engineered feature, Flag customer as high risk (1) if: late_payments >= 2, num_complaints >= 3, or credit_score < 580
     dim_behavior["high_risk_flag"] = (
-        (dim_behavior["late_payments"] >= 2) |
-        (dim_behavior["num_complaints"] >= 3) |
-        (dim_behavior["credit_score"] < 580)
+        (dim_behavior["late_payments"] >= 2)
+        | (dim_behavior["num_complaints"] >= 3)
+        | (dim_behavior["credit_score"] < 580)
     ).astype(int)
 
     # removes duplicate rows where customer_id appears more than once, particularly focusing on customer_id
@@ -271,18 +273,16 @@ def transform_fact_customer_churn(df):
     Build the fact table.
     This contains the main measurable business values and target.
     """
-    fact_customer_churn = df[[
-        "customer_id",
-        "monthlycharges",
-        "totalcharges",
-        "churn"
-    ]].copy()
+    fact_customer_churn = df[
+        ["customer_id", "monthlycharges", "totalcharges", "churn"]
+    ].copy()
 
     # example engineered metric
-    fact_customer_churn["avg_charge_per_month"] = (
-        fact_customer_churn["totalcharges"] /
-        df["tenure"].replace(0, 1) # swaps 0 to 1 before dividing
-    )
+    fact_customer_churn["avg_charge_per_month"] = fact_customer_churn[
+        "totalcharges"
+    ] / df["tenure"].replace(
+        0, 1
+    )  # swaps 0 to 1 before dividing
 
     fact_customer_churn = fact_customer_churn.drop_duplicates(subset=["customer_id"])
     return fact_customer_churn
@@ -441,13 +441,12 @@ def ensure_fingerprint_column_exists(table_name, dwh_engine):
 #     df.to_sql(
 #         'train_churn_model',
 #         engine,
-#         if_exists='replace',  
+#         if_exists='replace',
 #         index=False,
 #         chunksize=10000
 #     )
 
 #     print("train_churn_model table successfully built.")
-
 
 
 def build_train_churn_model(dwh_engine):
@@ -504,6 +503,7 @@ def build_train_churn_model(dwh_engine):
 
     print("train_churn_model rebuilt successfully.")
 
+
 # ---------------------------------------------------------
 # LOAD HELPERS
 # ---------------------------------------------------------
@@ -518,11 +518,13 @@ def load_new_dimension_rows(
     """
     # 1. Remove duplicates within the incoming dataframe itself
     df = df.drop_duplicates(subset=key_cols).copy()
-    
+
     # helps retrieve detailed metadata about a database engine
     inspector = inspect(dwh_engine)
 
-    fp_cols = fingerprint_cols or sorted(c for c in df.columns if c != fingerprint_column)
+    fp_cols = fingerprint_cols or sorted(
+        c for c in df.columns if c != fingerprint_column
+    )
     df = add_row_fingerprints(df, cols_to_hash=fp_cols)
 
     # If table does not exist, create it and load all rows
@@ -561,9 +563,7 @@ def load_new_dimension_rows(
         return 0
 
 
-def load_new_fact_rows(
-    df, table_name, key_cols, dwh_engine, fingerprint_cols=None
-):
+def load_new_fact_rows(df, table_name, key_cols, dwh_engine, fingerprint_cols=None):
     """
     Insert only new fact rows. Row-level `row_fp` is set at load time from
     fact business columns.
@@ -573,7 +573,9 @@ def load_new_fact_rows(
     df = df.drop_duplicates(subset=key_cols).copy()
     inspector = inspect(dwh_engine)
 
-    fp_cols = fingerprint_cols or sorted(c for c in df.columns if c != fingerprint_column)  # sorted for stability
+    fp_cols = fingerprint_cols or sorted(
+        c for c in df.columns if c != fingerprint_column
+    )  # sorted for stability
     df = add_row_fingerprints(df, cols_to_hash=fp_cols)
 
     if not inspector.has_table(table_name):
@@ -609,8 +611,6 @@ def load_new_fact_rows(
         return 0
 
 
-
-
 # ---------------------------------------------------------
 # DATA LINEAGE
 # ---------------------------------------------------------
@@ -621,7 +621,7 @@ LINEAGE_TABLE = "data_lineage_log"
 def ensure_lineage_table_exists(dwh_engine):
     """
     Create the lineage table if it does not already exist.
-    This table stores metadata about how each warehouse table was created. Can trace where data came from, what transformed it, 
+    This table stores metadata about how each warehouse table was created. Can trace where data came from, what transformed it,
     how many rows moved, and whether it succeeded — essentially giving you full observability over your data pipeline.
     """
     create_sql = text(f"""
@@ -663,7 +663,7 @@ def log_lineage(
     input_row_count,
     output_row_count,
     rows_inserted,
-    status
+    status,
 ):
     """
     Insert one lineage record into the lineage table.
@@ -708,37 +708,26 @@ def log_lineage(
     """)
 
     with dwh_engine.begin() as conn:
-        conn.execute(insert_sql, {
-            "etl_run_id": etl_run_id,
-            "dag_id": dag_id,
-            "task_id": task_id,
-            "source_name": source_name,
-            "source_type": source_type,
-            "target_table": target_table,
-            "transformation_name": transformation_name,
-            "period": period,
-            "period_start_date": period_start_date,
-            "period_end_date": period_end_date,
-            "input_row_count": input_row_count,
-            "output_row_count": output_row_count,
-            "rows_inserted": rows_inserted,
-            "status": status,
-            "log_timestamp": datetime.now()
-        })
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        conn.execute(
+            insert_sql,
+            {
+                "etl_run_id": etl_run_id,
+                "dag_id": dag_id,
+                "task_id": task_id,
+                "source_name": source_name,
+                "source_type": source_type,
+                "target_table": target_table,
+                "transformation_name": transformation_name,
+                "period": period,
+                "period_start_date": period_start_date,
+                "period_end_date": period_end_date,
+                "input_row_count": input_row_count,
+                "output_row_count": output_row_count,
+                "rows_inserted": rows_inserted,
+                "status": status,
+                "log_timestamp": datetime.now(),
+            },
+        )
 
 
 # import logging
@@ -792,7 +781,7 @@ def log_lineage(
 #             raise FileNotFoundError(f"CSV not found: {csv_path}. Place datasets in {data_path}")
 #         logger.info("Extracting %s from %s", csv_name, csv_path)        # Log what’s happening
 #         df = pd.read_csv(csv_path)      # actual extraction, reading the csv
-#         out_path = raw_dir / f"{stage_name}.csv"        
+#         out_path = raw_dir / f"{stage_name}.csv"
 #         df.to_csv(out_path, index=False)        # # Save into staging
 #         result[stage_name] = str(out_path)
 #         logger.info("Wrote %s rows to %s", len(df), out_path)
@@ -929,7 +918,7 @@ def log_lineage(
 
 #         for i in range(0, n_rows, batch_size):      # Instead of loading everything at once, load 10,000 rows at a time
 #             chunk = df.iloc[i : i + batch_size]
-#             chunk_num = i 
+#             chunk_num = i
 #             if_exists = "replace" if chunk_num == 1 else "append"
 #             chunk.to_sql(       # sends data into mySQL
 #                 name=table,

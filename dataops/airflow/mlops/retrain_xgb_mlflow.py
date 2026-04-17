@@ -9,7 +9,13 @@ from sqlalchemy import create_engine, text
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, OrdinalEncoder
-from sklearn.metrics import roc_auc_score, average_precision_score, f1_score, recall_score, precision_score
+from sklearn.metrics import (
+    roc_auc_score,
+    average_precision_score,
+    f1_score,
+    recall_score,
+    precision_score,
+)
 from xgboost import XGBClassifier
 
 from dataops.airflow.mlops.mlops_config import (
@@ -69,7 +75,11 @@ def get_last_trained_period():
 def should_retrain():
     latest_ingested = get_latest_ingested_period()
     last_trained = get_last_trained_period()
-    return (latest_ingested - last_trained) >= RETRAIN_EVERY_N_PERIODS, latest_ingested, last_trained
+    return (
+        (latest_ingested - last_trained) >= RETRAIN_EVERY_N_PERIODS,
+        latest_ingested,
+        last_trained,
+    )
 
 
 def load_best_params():
@@ -117,7 +127,9 @@ def split_by_period(df: pd.DataFrame):
     """
     periods = sorted(df["ingestion_period"].unique())
     if len(periods) < 3:
-        raise ValueError("Need at least 3 ingested periods before the first retraining run.")
+        raise ValueError(
+            "Need at least 3 ingested periods before the first retraining run."
+        )
 
     test_period = periods[-1]
     val_period = periods[-2]
@@ -144,7 +156,11 @@ def build_preprocessor(feature_cols):
         transformers=[
             ("num", StandardScaler(), numeric_cols),
             ("bin", "passthrough", binary_cols),
-            ("ord", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1), ordinal_cols),
+            (
+                "ord",
+                OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1),
+                ordinal_cols,
+            ),
             ("nom", OneHotEncoder(drop="first", handle_unknown="ignore"), nominal_cols),
         ]
     )
@@ -181,7 +197,9 @@ def wait_for_model_version(model_name, version, timeout=30):
         if mv.status == "READY":
             return
         time.sleep(1)
-    raise TimeoutError(f"Model version {version} for {model_name} not READY within timeout.")
+    raise TimeoutError(
+        f"Model version {version} for {model_name} not READY within timeout."
+    )
 
 
 def retrain_and_register():
@@ -200,14 +218,19 @@ def retrain_and_register():
             "action": "skip",
             "latest_ingested_period": latest_ingested,
             "last_trained_period": last_trained,
-            "reason": f"Need {RETRAIN_EVERY_N_PERIODS} new periods before retraining."
+            "reason": f"Need {RETRAIN_EVERY_N_PERIODS} new periods before retraining.",
         }
 
     df = load_training_data(latest_ingested)
     selected_features = load_selected_features(df.columns.tolist())
 
     # only keep features that actually exist in train_churn_model
-    feature_cols = [c for c in selected_features if c in df.columns and c not in {"customer_id", "signup_date", "ingestion_period", "churn"}]
+    feature_cols = [
+        c
+        for c in selected_features
+        if c in df.columns
+        and c not in {"customer_id", "signup_date", "ingestion_period", "churn"}
+    ]
 
     train_df, val_df, test_df = split_by_period(df)
 
@@ -222,7 +245,6 @@ def retrain_and_register():
 
     params = load_best_params()
     print("Loaded params:", params)
-    
 
     # class weighting from current train split
     neg = int((y_train == 0).sum())
@@ -245,14 +267,18 @@ def retrain_and_register():
     )
 
     # candidate for evaluation
-    candidate_pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("model", xgb),
-    ])
+    candidate_pipeline = Pipeline(
+        [
+            ("preprocessor", preprocessor),
+            ("model", xgb),
+        ]
+    )
 
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
-    with mlflow.start_run(run_name=f"retrain_xgb_up_to_period_{latest_ingested}") as run:
+    with mlflow.start_run(
+        run_name=f"retrain_xgb_up_to_period_{latest_ingested}"
+    ) as run:
         candidate_pipeline.fit(X_train, y_train)
 
         y_prob = candidate_pipeline.predict_proba(X_test)[:, 1]
@@ -267,36 +293,39 @@ def retrain_and_register():
             "precision": float(precision_score(y_test, y_pred)),
         }
 
-        mlflow.log_params({
-            "model_family": "XGBoost",
-            "trained_up_to_period": latest_ingested,
-            "threshold": threshold,
-            "feature_count": len(feature_cols),
-            "train_rows": len(train_df),
-            "val_rows": len(val_df),
-            "test_rows": len(test_df),
-            "max_depth": params.get("max_depth", 3),
-            "learning_rate": params.get("learning_rate", 0.056),
-            "n_estimators": params.get("n_estimators", 373),
-        })
+        mlflow.log_params(
+            {
+                "model_family": "XGBoost",
+                "trained_up_to_period": latest_ingested,
+                "threshold": threshold,
+                "feature_count": len(feature_cols),
+                "train_rows": len(train_df),
+                "val_rows": len(val_df),
+                "test_rows": len(test_df),
+                "max_depth": params.get("max_depth", 3),
+                "learning_rate": params.get("learning_rate", 0.056),
+                "n_estimators": params.get("n_estimators", 373),
+            }
+        )
 
         mlflow.log_metrics(metrics)
-        mlflow.set_tags({
-            "trained_up_to_period": str(latest_ingested),
-            "candidate_model": "true",
-            "model_family": "XGBoost",
-        })
+        mlflow.set_tags(
+            {
+                "trained_up_to_period": str(latest_ingested),
+                "candidate_model": "true",
+                "model_family": "XGBoost",
+            }
+        )
 
         champion = get_current_champion_metrics()
 
         is_good_enough = (
-            metrics["roc_auc"] >= MIN_ACCEPTABLE_ROC_AUC and
-            metrics["pr_auc"] >= MIN_ACCEPTABLE_PR_AUC
+            metrics["roc_auc"] >= MIN_ACCEPTABLE_ROC_AUC
+            and metrics["pr_auc"] >= MIN_ACCEPTABLE_PR_AUC
         )
 
-        beats_champion = (
-            champion is None or
-            metrics["roc_auc"] > (champion["roc_auc"] or 0.0)
+        beats_champion = champion is None or metrics["roc_auc"] > (
+            champion["roc_auc"] or 0.0
         )
 
         promote = is_good_enough and beats_champion
@@ -318,23 +347,32 @@ def retrain_and_register():
             X_all = df[feature_cols]
             y_all = df["churn"]
 
-            final_pipeline = Pipeline([
-                ("preprocessor", build_preprocessor(feature_cols)),
-                ("model", XGBClassifier(
-                    random_state=42,
-                    eval_metric="logloss",
-                    max_depth=params.get("max_depth", 3),
-                    learning_rate=params.get("learning_rate", 0.056),
-                    n_estimators=params.get("n_estimators", 373),
-                    min_child_weight=params.get("min_child_weight", 48),
-                    gamma=params.get("gamma", 3.09),
-                    reg_alpha=params.get("reg_alpha", 1.66),
-                    reg_lambda=params.get("reg_lambda", 3.22),
-                    subsample=params.get("subsample", 0.782678789545537),
-                    colsample_bytree=params.get("colsample_bytree", 0.8111691627386142),
-                    scale_pos_weight=params.get("scale_pos_weight", scale_pos_weight),
-                )),
-            ])
+            final_pipeline = Pipeline(
+                [
+                    ("preprocessor", build_preprocessor(feature_cols)),
+                    (
+                        "model",
+                        XGBClassifier(
+                            random_state=42,
+                            eval_metric="logloss",
+                            max_depth=params.get("max_depth", 3),
+                            learning_rate=params.get("learning_rate", 0.056),
+                            n_estimators=params.get("n_estimators", 373),
+                            min_child_weight=params.get("min_child_weight", 48),
+                            gamma=params.get("gamma", 3.09),
+                            reg_alpha=params.get("reg_alpha", 1.66),
+                            reg_lambda=params.get("reg_lambda", 3.22),
+                            subsample=params.get("subsample", 0.782678789545537),
+                            colsample_bytree=params.get(
+                                "colsample_bytree", 0.8111691627386142
+                            ),
+                            scale_pos_weight=params.get(
+                                "scale_pos_weight", scale_pos_weight
+                            ),
+                        ),
+                    ),
+                ]
+            )
 
             final_pipeline.fit(X_all, y_all)
 
@@ -347,16 +385,32 @@ def retrain_and_register():
             run_id = run.info.run_id
             client = MlflowClient()
             registered = mlflow.register_model(
-                model_uri=f"runs:/{run_id}/model",
-                name=REGISTERED_MODEL_NAME
+                model_uri=f"runs:/{run_id}/model", name=REGISTERED_MODEL_NAME
             )
 
             wait_for_model_version(REGISTERED_MODEL_NAME, registered.version)
 
-            client.set_model_version_tag(REGISTERED_MODEL_NAME, registered.version, "trained_up_to_period", str(latest_ingested))
-            client.set_model_version_tag(REGISTERED_MODEL_NAME, registered.version, "decision_threshold", str(threshold))
-            client.set_model_version_tag(REGISTERED_MODEL_NAME, registered.version, "roc_auc", str(metrics["roc_auc"]))
-            client.set_registered_model_alias(REGISTERED_MODEL_NAME, "champion", registered.version)
+            client.set_model_version_tag(
+                REGISTERED_MODEL_NAME,
+                registered.version,
+                "trained_up_to_period",
+                str(latest_ingested),
+            )
+            client.set_model_version_tag(
+                REGISTERED_MODEL_NAME,
+                registered.version,
+                "decision_threshold",
+                str(threshold),
+            )
+            client.set_model_version_tag(
+                REGISTERED_MODEL_NAME,
+                registered.version,
+                "roc_auc",
+                str(metrics["roc_auc"]),
+            )
+            client.set_registered_model_alias(
+                REGISTERED_MODEL_NAME, "champion", registered.version
+            )
 
             result["new_champion_version"] = registered.version
         else:

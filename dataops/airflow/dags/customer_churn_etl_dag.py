@@ -13,7 +13,7 @@ COUNTER_FILE = "/tmp/airflow_churn_period_counter.txt"
 with DAG(
     dag_id="customer_churn_incremental_etl",
     start_date=datetime(2026, 3, 1),
-    schedule="*/1 * * * *",   # every 1 minute for testing, every run ingests 1 monthly period
+    schedule="*/1 * * * *",  # every 1 minute for testing, every run ingests 1 monthly period
     catchup=False,
     max_active_runs=1,
     tags=["bt4301", "etl", "customer_churn", "watermarking"],
@@ -107,10 +107,7 @@ with DAG(
         # LOAD DIMENSIONS + WATERMARKING + LINEAGE
         # ==========================
         inserted_dim_customer = load_new_dimension_rows(
-            df_dim_customer,
-            "dim_customer",
-            ["customer_id"],
-            dwh_engine
+            df_dim_customer, "dim_customer", ["customer_id"], dwh_engine
         )
 
         log_lineage(
@@ -128,14 +125,11 @@ with DAG(
             input_row_count=extracted_rows,
             output_row_count=len(df_dim_customer),
             rows_inserted=inserted_dim_customer,
-            status="success"
+            status="success",
         )
 
         inserted_dim_account = load_new_dimension_rows(
-            df_dim_account,
-            "dim_account",
-            ["customer_id"],
-            dwh_engine
+            df_dim_account, "dim_account", ["customer_id"], dwh_engine
         )
 
         log_lineage(
@@ -153,14 +147,11 @@ with DAG(
             input_row_count=extracted_rows,
             output_row_count=len(df_dim_account),
             rows_inserted=inserted_dim_account,
-            status="success"
+            status="success",
         )
 
         inserted_dim_service = load_new_dimension_rows(
-            df_dim_service,
-            "dim_service",
-            ["customer_id"],
-            dwh_engine
+            df_dim_service, "dim_service", ["customer_id"], dwh_engine
         )
 
         log_lineage(
@@ -178,14 +169,11 @@ with DAG(
             input_row_count=extracted_rows,
             output_row_count=len(df_dim_service),
             rows_inserted=inserted_dim_service,
-            status="success"
+            status="success",
         )
 
         inserted_dim_behavior = load_new_dimension_rows(
-            df_dim_behavior,
-            "dim_behavior",
-            ["customer_id"],
-            dwh_engine
+            df_dim_behavior, "dim_behavior", ["customer_id"], dwh_engine
         )
 
         log_lineage(
@@ -203,17 +191,14 @@ with DAG(
             input_row_count=extracted_rows,
             output_row_count=len(df_dim_behavior),
             rows_inserted=inserted_dim_behavior,
-            status="success"
+            status="success",
         )
 
         # ==========================
         # LOAD FACT + WATERMARKING
         # ==========================
         inserted_fact = load_new_fact_rows(
-            df_fact_churn,
-            "fact_customer_churn",
-            ["customer_id"],
-            dwh_engine
+            df_fact_churn, "fact_customer_churn", ["customer_id"], dwh_engine
         )
 
         log_lineage(
@@ -231,7 +216,7 @@ with DAG(
             input_row_count=extracted_rows,
             output_row_count=len(df_fact_churn),
             rows_inserted=inserted_fact,
-            status="success"
+            status="success",
         )
         # ==========================
         # BUILD TRAINING DATASET
@@ -253,40 +238,11 @@ with DAG(
     etl_done >> trigger_mlops >> confirm_trigger()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # import sys
 # from pathlib import Path
 # from datetime import datetime, timedelta
 
-# _DATAOPS_DIR = Path(__file__).resolve().parent.parent.parent  
+# _DATAOPS_DIR = Path(__file__).resolve().parent.parent.parent
 # if str(_DATAOPS_DIR) not in sys.path:
 #     sys.path.insert(0, str(_DATAOPS_DIR))
 
@@ -303,7 +259,7 @@ with DAG(
 # )
 
 # STAGING_DIR = DEFAULT_STAGING_DIR
-# LOAD_BATCH_SIZE = 10_000  
+# LOAD_BATCH_SIZE = 10_000
 # LOAD_BATCH_DELAY_SECONDS = 0.5
 
 

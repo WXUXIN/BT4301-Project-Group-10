@@ -15,6 +15,7 @@ from dataops.airflow.mlops.mlops_config import (
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
+
 def ensure_monitor_table():
     engine = create_engine(DATAWAREHOUSE_DB, echo=False)
     create_sql = f"""
@@ -32,6 +33,7 @@ def ensure_monitor_table():
     with engine.begin() as conn:
         conn.execute(text(create_sql))
 
+
 def log_monitor_snapshot():
     """
     It logs a snapshot of your data and current champion model into a database so you can monitor changes over time.
@@ -40,12 +42,15 @@ def log_monitor_snapshot():
     engine = create_engine(DATAWAREHOUSE_DB, echo=False)
     df = pd.read_sql(text(f"SELECT * FROM {TRAIN_TABLE}"), con=engine)
 
-    latest_period_df = pd.read_sql(text(f"""
+    latest_period_df = pd.read_sql(
+        text(f"""
         SELECT MAX(period) AS latest_period
         FROM {LINEAGE_TABLE}
         WHERE target_table = 'fact_customer_churn'
           AND status = 'success'
-    """), con=engine)
+    """),
+        con=engine,
+    )
 
     latest_period = latest_period_df["latest_period"].iloc[0]
     latest_period = int(latest_period) if pd.notna(latest_period) else 0
@@ -81,6 +86,7 @@ def log_monitor_snapshot():
         conn.execute(insert_sql, payload)
 
     return payload
+
 
 if __name__ == "__main__":
     print(log_monitor_snapshot())

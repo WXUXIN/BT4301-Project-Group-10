@@ -6,8 +6,9 @@ import json
 
 # 1. Database Connection (using your config settings)
 # Replace with your actual credentials from mlops_config.py
-USER, PASSWORD, HOST, DB = 'bt4301', 'password', 'localhost', 'customer_churn'
-engine = create_engine(f'mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}')
+USER, PASSWORD, HOST, DB = "bt4301", "password", "localhost", "customer_churn"
+engine = create_engine(f"mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}")
+
 
 def get_latest():
     query = """
@@ -26,10 +27,9 @@ def get_latest():
     """
 
     df = pd.read_sql(query, engine)
-    df = df.fillna({
-        'contract': 'month_to_month',
-        'customer_satisfaction': 0.0
-    }).fillna(0)
+    df = df.fillna({"contract": "month_to_month", "customer_satisfaction": 0.0}).fillna(
+        0
+    )
 
     records = df.to_dict(orient="records")
 
@@ -38,5 +38,6 @@ def get_latest():
         json.dump(records, f, indent=4)
 
     print(f"Successfully saved {len(records)} records to {filename}")
-    
+
+
 get_latest()

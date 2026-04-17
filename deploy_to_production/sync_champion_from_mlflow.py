@@ -24,6 +24,7 @@ Local mode works because the project stores everything on disk:
 After running this script, restart the serving container:
     docker compose -f deploy_to_production/compose.yaml restart churn-api
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,6 +54,7 @@ _DEFAULT_DB_PATH = Path(PROJECT_ROOT) / "mlflow.db"
 # ===========================================================================
 # Shared helpers
 # ===========================================================================
+
 
 def _sync_feature_list(run_id: str | None = None) -> None:
     """
@@ -98,7 +100,9 @@ def _sync_feature_list(run_id: str | None = None) -> None:
         with open(dest, "w") as f:
             json.dump(feature_dict, f, indent=2)
 
-        print(f"  feature_lists.json written ({len(feature_dict.get('all', []))} features)")
+        print(
+            f"  feature_lists.json written ({len(feature_dict.get('all', []))} features)"
+        )
 
     except Exception as exc:
         print(f"  ERROR: Could not obtain feature_lists.json: {exc}", file=sys.stderr)
@@ -115,7 +119,11 @@ def _write_metadata(version: str, tags: dict) -> None:
         threshold = None
 
     try:
-        period = int(raw_period) if raw_period is not None and str(raw_period).isdigit() else raw_period
+        period = (
+            int(raw_period)
+            if raw_period is not None and str(raw_period).isdigit()
+            else raw_period
+        )
     except (ValueError, TypeError):
         period = raw_period
 
@@ -148,14 +156,19 @@ def _print_footer() -> None:
     print(f"Artifacts ready in: {OUTPUT_DIR}")
     print()
     print("Next steps:")
-    print("  docker compose -f deploy_to_production/compose.yaml up -d --build   # first time")
-    print("  docker compose -f deploy_to_production/compose.yaml restart churn-api  # after sync")
+    print(
+        "  docker compose -f deploy_to_production/compose.yaml up -d --build   # first time"
+    )
+    print(
+        "  docker compose -f deploy_to_production/compose.yaml restart churn-api  # after sync"
+    )
     print(f"{'=' * 60}\n")
 
 
 # ===========================================================================
 # LOCAL mode — reads SQLite + copies from mlruns/ directly
 # ===========================================================================
+
 
 def _local_sync(db_path: Path) -> None:
     """
@@ -211,8 +224,7 @@ def _local_sync(db_path: Path) -> None:
 
     # 3. Get tags (decision_threshold, trained_up_to_period …)
     tag_rows = con.execute(
-        "SELECT key, value FROM model_version_tags "
-        "WHERE name = ? AND version = ?",
+        "SELECT key, value FROM model_version_tags " "WHERE name = ? AND version = ?",
         (REGISTERED_MODEL_NAME, version),
     ).fetchall()
     tags = {r["key"]: r["value"] for r in tag_rows}
@@ -248,7 +260,7 @@ def _local_sync(db_path: Path) -> None:
     print(f"  Model copied: {model_pkl_src} → {model_dest}/")
 
     # 6. Sync feature list (local copy, no fallback needed since run_id is available)
-    _sync_feature_list(run_id=None)   # prefer local file; no HTTP fallback in local mode
+    _sync_feature_list(run_id=None)  # prefer local file; no HTTP fallback in local mode
 
     # 7. Write metadata
     _write_metadata(version, tags)
@@ -259,6 +271,7 @@ def _local_sync(db_path: Path) -> None:
 # ===========================================================================
 # REMOTE mode — connects to the MLflow HTTP tracking server
 # ===========================================================================
+
 
 def _remote_sync() -> None:
     """
@@ -325,6 +338,7 @@ def _remote_sync() -> None:
 # ===========================================================================
 # Entry point
 # ===========================================================================
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(

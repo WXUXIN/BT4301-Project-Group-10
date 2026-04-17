@@ -8,13 +8,15 @@ from customer_churn_etl_functions import (
 )
 
 # Tables that participate in row_fp verification
-TABLES_FINGERPRINT_AUDIT = frozenset({
-    "dim_customer",
-    "dim_account",
-    "dim_service",
-    "dim_behavior",
-    "fact_customer_churn",
-})
+TABLES_FINGERPRINT_AUDIT = frozenset(
+    {
+        "dim_customer",
+        "dim_account",
+        "dim_service",
+        "dim_behavior",
+        "fact_customer_churn",
+    }
+)
 
 
 def recompute_row_fingerprints_from_db(df):
@@ -39,7 +41,9 @@ def verify_row_fingerprints(df_loaded, key_col="customer_id"):
     if fingerprint_column not in df_loaded.columns:
         raise ValueError(f"Loaded data must include {fingerprint_column!r}")
 
-    recalc = recompute_row_fingerprints_from_db(df_loaded.drop(columns=[fingerprint_column]))
+    recalc = recompute_row_fingerprints_from_db(
+        df_loaded.drop(columns=[fingerprint_column])
+    )
     merged = df_loaded[[key_col, fingerprint_column]].merge(
         recalc[[key_col, fingerprint_column]].rename(
             columns={fingerprint_column: "row_fp_expected"}

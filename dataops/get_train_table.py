@@ -2,8 +2,8 @@ import pandas as pd
 from sqlalchemy import create_engine
 
 # 1. Setup your connection (Adjust the URI for your specific DB: PostgreSQL, Snowflake, etc.)
-USER, PASSWORD, HOST, DB = 'bt4301', 'password', 'localhost', 'customer_churn'
-engine = create_engine(f'mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}')
+USER, PASSWORD, HOST, DB = "bt4301", "password", "localhost", "customer_churn"
+engine = create_engine(f"mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}")
 
 # 2. Define the transformation query
 query = """
@@ -36,6 +36,8 @@ LEFT JOIN dim_behavior  b ON f.customer_id = b.customer_id
 df = pd.read_sql(query, engine)
 
 print(f"Writing {len(df)} rows to train_churn_model...")
-df.to_sql('train_churn_model', engine, if_exists='replace', index=False, chunksize=10000)
+df.to_sql(
+    "train_churn_model", engine, if_exists="replace", index=False, chunksize=10000
+)
 
 print("Success: Table 'train_churn_model' created.")

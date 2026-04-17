@@ -5,6 +5,7 @@ To run locally (outside Docker):
 Run via Docker:
     docker compose -f deploy_to_production/compose.yaml up -d
 """
+
 from __future__ import annotations
 from fastapi.middleware.cors import CORSMiddleware
 import json
@@ -19,7 +20,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from sqlalchemy import create_engine
 import json
-
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -47,7 +47,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,9 +56,9 @@ app.add_middleware(
 # Global state — loaded once at startup
 # ---------------------------------------------------------------------------
 
-_pipeline = None          # full sklearn Pipeline: predict_proba() ready
+_pipeline = None  # full sklearn Pipeline: predict_proba() ready
 _feature_cols: list = []  # ordered list of required input features
-_metadata: dict = {}      # champion provenance (version, period, threshold …)
+_metadata: dict = {}  # champion provenance (version, period, threshold …)
 _threshold: float = 0.57  # decision threshold — overridden from metadata.json
 
 
@@ -93,23 +93,31 @@ def _startup() -> None:
 
     # --- feature list ----------------------------------------------------
     if not feature_list_path.exists():
-        print(f"[startup] ERROR: feature_lists.json not found at {feature_list_path}. Serving will return 503.")
+        print(
+            f"[startup] ERROR: feature_lists.json not found at {feature_list_path}. Serving will return 503."
+        )
         _pipeline = None
         return
 
     with open(feature_list_path) as f:
         fl = json.load(f)
-    _feature_cols = fl["all"] if isinstance(fl, dict) and "all" in fl else (
-        fl if isinstance(fl, list) else []
+    _feature_cols = (
+        fl["all"]
+        if isinstance(fl, dict) and "all" in fl
+        else (fl if isinstance(fl, list) else [])
     )
     if not _feature_cols:
-        print("[startup] ERROR: feature_lists.json has an empty feature list. Serving will return 503.")
+        print(
+            "[startup] ERROR: feature_lists.json has an empty feature list. Serving will return 503."
+        )
         _pipeline = None
         return
 
     # --- metadata --------------------------------------------------------
     if not metadata_path.exists():
-        print(f"[startup] WARNING: metadata.json not found at {metadata_path}. Using defaults.")
+        print(
+            f"[startup] WARNING: metadata.json not found at {metadata_path}. Using defaults."
+        )
     else:
         with open(metadata_path) as f:
             _metadata = json.load(f)
@@ -130,6 +138,7 @@ def _startup() -> None:
 # Request / response schemas
 # ---------------------------------------------------------------------------
 
+
 class CustomerFeatures(BaseModel):
     """
     Feature values for a single customer.
@@ -140,14 +149,18 @@ class CustomerFeatures(BaseModel):
     """
 
     # numeric
-    customer_satisfaction: float = Field(..., ge=0, example=7.0,
-        description="Customer satisfaction score")
-    num_complaints: int = Field(..., ge=0, example=1,
-        description="Number of complaints raised")
-    num_service_calls: int = Field(..., ge=0, example=2,
-        description="Number of inbound service calls")
-    late_payments: int = Field(..., ge=0, example=0,
-        description="Number of late payment occurrences")
+    customer_satisfaction: float = Field(
+        ..., ge=0, example=7.0, description="Customer satisfaction score"
+    )
+    num_complaints: int = Field(
+        ..., ge=0, example=1, description="Number of complaints raised"
+    )
+    num_service_calls: int = Field(
+        ..., ge=0, example=2, description="Number of inbound service calls"
+    )
+    late_payments: int = Field(
+        ..., ge=0, example=0, description="Number of late payment occurrences"
+    )
 
     # binary flags (0 / 1)
     has_phone_service: int = Field(..., ge=0, le=1, example=1)
@@ -159,11 +172,10 @@ class CustomerFeatures(BaseModel):
     is_auto_pay: int = Field(..., ge=0, le=1, example=1)
 
     # ordinal / categorical
-    tenure_segment: Literal['Infant', 'Stable', 'Loyal', 'Veteran'] = Field(
-        ..., 
-        description="Tenure category from dim_customer"
+    tenure_segment: Literal["Infant", "Stable", "Loyal", "Veteran"] = Field(
+        ..., description="Tenure category from dim_customer"
     )
-    contract: Literal['month_to_month', 'one_year', 'two_year'] = Field(...)
+    contract: Literal["month_to_month", "one_year", "two_year"] = Field(...)
 
     class Config:
         extra = "allow"  # extra keys are accepted but ignored
@@ -189,6 +201,7 @@ class BatchPredictionResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Scoring helper
 # ---------------------------------------------------------------------------
+
 
 def _score(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -233,6 +246,7 @@ def _champion_meta() -> dict:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @app.get("/", summary="Service info")
 def root():
@@ -342,21 +356,22 @@ def predict_batch(payloads: List[CustomerFeatures]):
         "predictions": results.to_dict(orient="records"),
     }
 
+
 # @app.get("/fetch-latest-data")
 # def fetch_latest_from_db():
 #     USER, PASSWORD, HOST, DB = 'bt4301', 'password', 'localhost', 'customer_churn'
 #     engine = create_engine(f'mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}')
 #     query = """
-#     SELECT 
+#     SELECT
 #         t.customer_id,
-#         t.customer_satisfaction, t.num_complaints, t.num_service_calls, 
-#         t.late_payments, t.has_phone_service, t.has_internet_service, 
-#         t.has_tech_support, t.has_streaming_tv, t.has_streaming_movies, 
+#         t.customer_satisfaction, t.num_complaints, t.num_service_calls,
+#         t.late_payments, t.has_phone_service, t.has_internet_service,
+#         t.has_tech_support, t.has_streaming_tv, t.has_streaming_movies,
 #         t.high_risk_flag, t.is_auto_pay, t.tenure_segment, t.contract
 #     FROM train_churn_model t
 #     JOIN dim_customer c ON t.customer_id = c.customer_id
 #     WHERE c.signup_date >= (
-#         SELECT DATE_SUB(MAX(signup_date), INTERVAL 2 DAY) 
+#         SELECT DATE_SUB(MAX(signup_date), INTERVAL 2 DAY)
 #         FROM dim_customer
 #     )
 #     """
@@ -365,5 +380,5 @@ def predict_batch(payloads: List[CustomerFeatures]):
 #         'contract': 'month_to_month',
 #         'customer_satisfaction': 0.0
 #     }).fillna(0)
-    
+
 #     return df.to_dict(orient="records")

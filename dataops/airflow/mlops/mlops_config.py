@@ -2,19 +2,14 @@ import os
 import json
 
 PROJECT_ROOT = os.getenv(
-    "PROJECT_ROOT",
-    "/root/bt4301_group_project/BT4301-Project-Group-10"
+    "PROJECT_ROOT", "/root/bt4301_group_project/BT4301-Project-Group-10"
 )
 
 DATAWAREHOUSE_DB = os.getenv(
-    "DATAWAREHOUSE_DB",
-    "mysql+pymysql://bt4301:password@localhost:3306/customer_churn"
+    "DATAWAREHOUSE_DB", "mysql+pymysql://bt4301:password@localhost:3306/customer_churn"
 )
 
-MLFLOW_TRACKING_URI = os.getenv(
-    "MLFLOW_TRACKING_URI",
-    "http://127.0.0.1:9080"
-)
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://127.0.0.1:9080")
 
 MLFLOW_EXPERIMENT_NAME = "customer_churn_retraining"
 REGISTERED_MODEL_NAME = "customer_churn_xgb"
@@ -53,6 +48,7 @@ FEATURE_TYPE_MAP = {
 }
 
 EXCLUDED_COLS = {"customer_id", "signup_date", "ingestion_period", "churn"}
+
 
 def load_selected_features(fallback_cols=None):
     """
