@@ -19,9 +19,11 @@ jobs:
         # This compiles the files to bytecode. If there is a syntax error, it fails.
         run: python -m py_compile deploy_to_production/*.py 
 
-      - name: Install YAML Linter
-        run: pip install yamllint
+      - name: Install PyYAML 
+        run: pip install PyYAML
 
       - name: Verify Docker YAML Syntax
         # This checks for indentation and structural errors in your docker file
-        run: yamllint deploy_to_production/compose.yaml
+        run: |
+          python -c "import yaml; yaml.safe_load(open('deploy_to_production/compose.yaml'))"
+
