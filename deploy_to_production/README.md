@@ -1,6 +1,6 @@
 # Customer Churn — Production Serving Layer
 
-FastAPI serving app for the MLflow champion churn model.  
+FastAPI backend + ChurnGuard frontend dashboard for the MLflow champion churn model.  
 The Docker image contains only app code; the champion model artifacts are mounted from the host at runtime.
 
 ---
@@ -10,6 +10,8 @@ The Docker image contains only app code; the champion model artifacts are mounte
 ```
 deploy_to_production/
 ├── app.py                          # FastAPI serving application
+├── index.html                      # ChurnGuard frontend dashboard
+├── latest_predictions_input.json   # Customer feature data for scoring
 ├── sync_champion_from_mlflow.py    # Pulls champion artifacts from MLflow
 ├── requirements.txt                # Serving container dependencies
 ├── Dockerfile                      # Image build (no model artifacts baked in)
@@ -26,7 +28,114 @@ deploy_to_production/
 
 ---
 
-## Prerequisites
+## ChurnGuard Frontend Dashboard
+
+`index.html` is a single-page dashboard for viewing churn predictions, exploring customer profiles, and drafting retention emails. It calls the FastAPI backend for scoring and falls back to client-side mock scoring automatically if the API is unavailable.
+
+### Running locally
+
+Two terminals, both from `deploy_to_production/`:
+
+```bash
+# Terminal 1 — FastAPI backend (requires model artifacts)
+pip install -r requirements.txt
+ARTIFACTS_DIR=./artifacts/current uvicorn app:app --reload --port 8000
+
+# Terminal 2 — Static file server for the frontend
+python3 -m http.server 3000
+```
+
+Open **http://localhost:3000**, then click **Run Predictions**.
+
+> **No model artifacts?** The dashboard automatically detects the API is offline and switches to **Demo Mode** (client-side mock scoring). The header pill turns orange. All UI features — filtering, email modal, export — still work.
+
+> **Why a static file server?** `fetch('latest_predictions_input.json')` is blocked by browsers when opening `index.html` directly from the filesystem (`file://`). A local HTTP server (`python3 -m http.server`) bypasses this restriction.
+
+---
+
+### Dashboard features
+
+#### Header bar
+Displays the active model name and version, decision threshold, and an API status pill:
+- **Green — API Connected**: predictions come from the live FastAPI model
+- **Orange — Demo Mode**: API is offline; predictions use client-side heuristic scoring
+- **Grey — Not connected**: predictions have not been run yet
+
+#### Summary stat cards
+Four cards update whenever the period or filters change:
+
+| Card | What it shows |
+|---|---|
+| Customers Scored | Total customers in the selected period |
+| At Risk | Count and percentage of customers predicted to churn |
+| High Risk | Count of `high` risk-tier customers; medium count shown below |
+| Avg Churn Prob | Average churn probability across at-risk customers only |
+
+#### Period selector
+The 1,142 customers in `latest_predictions_input.json` are split into three equal mock periods to simulate a rolling monthly data pipeline:
+
+| Option | Records |
+|---|---|
+| Period 3 — Latest *(default)* | Last third (~381 customers) |
+| Period 2 | Middle third |
+| Period 1 | First third |
+| All Periods | All 1,142 customers |
+
+Switching periods instantly re-filters the already-scored predictions — no re-call to the API.
+
+#### Risk filter toggle
+- **At-Risk Only** *(default)*: shows only customers where `churn_prediction = 1`
+- **All Customers**: shows everyone, including low-risk customers
+
+#### Customer ID search
+Live text filter applied on top of the period and risk filters. Useful for looking up a specific customer before sending a retention email.
+
+#### Predictions table
+Each row shows:
+
+| Column | Detail |
+|---|---|
+| Customer ID | Monospace, coloured to stand out |
+| Churn Probability | Inline bar + percentage, colour-coded by risk tier |
+| Risk Tier | Badge: red = high, orange = medium, green = low |
+| Contract | Badge: yellow = Monthly (highest risk), teal = 1-Year, green = 2-Year |
+| Tenure Segment | Badge: Infant / Stable / Loyal / Veteran |
+| Actions | Email button (at-risk only) + expand toggle |
+
+#### Expandable customer detail row
+Click **▼** on any row to reveal a detail panel showing:
+- Satisfaction score, complaint count, service call count, late payments — each colour-coded (red if concerning, orange if moderate, green if healthy)
+- Churn probability to 2 decimal places
+- Whether the `high_risk_flag` is set
+- Service subscription chips: Phone, Internet, Tech Support, Streaming TV, Movies, Auto Pay — each shown as active (green) or inactive (grey strikethrough)
+
+#### Retention email modal
+The **✉ Email** button appears on every at-risk customer row. Clicking it opens a modal pre-populated with:
+
+- **To**: a mock email address derived from the customer ID
+- **Subject** and **Message**: generated based on the customer's risk profile
+
+The message template is chosen by matching against the customer's features in priority order:
+
+| Condition | Message angle |
+|---|---|
+| High risk + month-to-month contract | Offer 20% discount to switch to annual plan |
+| High risk + ≥2 complaints | Apology + service credit + dedicated account manager |
+| High risk + ≥1 late payment | Flexible payment plan options |
+| High risk + satisfaction ≤ 4 | Personal outreach to understand dissatisfaction |
+| High risk (other) | Loyalty rewards + plan review |
+| Medium risk | General check-in and plan optimisation offer |
+
+All fields are fully editable before sending. Clicking **Send Email** closes the modal and shows a toast notification — no real email is sent (mock only).
+
+#### Export CSV
+Downloads a `.csv` of the currently visible records (respects the active period and risk filter). Columns: `customer_id`, `churn_probability`, `churn_prediction`, `risk_tier`, `contract`, `tenure_segment`, `customer_satisfaction`, `num_complaints`, `num_service_calls`, `late_payments`, `high_risk_flag`.
+
+File is named `churn_<period>_<date>.csv`.
+
+---
+
+## Backend prerequisites
 
 | Requirement | Where |
 |---|---|

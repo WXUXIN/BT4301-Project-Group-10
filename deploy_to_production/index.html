@@ -1,94 +1,766 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Churn API Test</title>
-    <style>
-        body { font-family: sans-serif; padding: 20px; line-height: 1.6; }
-        .risk-row { color: red; font-weight: bold; }
-        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f4f4f4; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChurnGuard — Customer Retention Dashboard</title>
+  <!--
+    HOW TO RUN LOCALLY
+    ==================
+    Terminal 1 (API):
+      cd deploy_to_production
+      pip install -r requirements.txt
+      ARTIFACTS_DIR=./artifacts/current uvicorn app:app --reload --port 8000
+
+    Terminal 2 (Frontend):
+      cd deploy_to_production
+      python3 -m http.server 3000
+
+    Open: http://localhost:3000
+
+    No model artifacts? The UI auto-falls back to Demo Mode (mock scoring).
+    All features still work.
+  -->
+  <style>
+    :root {
+      --primary: #1e3a5f;
+      --primary-light: #2d5a8e;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --bg: #f0f4f8;
+      --card: #ffffff;
+      --text: #1a202c;
+      --text-muted: #718096;
+      --border: #e2e8f0;
+      --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+      --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+      --radius: 8px;
+      --radius-sm: 4px;
+      --high: #e53e3e; --high-bg: #fff5f5; --high-border: #feb2b2;
+      --medium: #dd6b20; --medium-bg: #fffaf0; --medium-border: #fbd38d;
+      --low: #38a169; --low-bg: #f0fff4; --low-border: #9ae6b4;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    button { cursor: pointer; font-family: inherit; }
+    input, select, textarea { font-family: inherit; }
+
+    /* HEADER */
+    .app-header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white; padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px; box-shadow: var(--shadow-lg);
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-brand { display: flex; align-items: center; gap: 12px; }
+    .logo-icon {
+      width: 36px; height: 36px; background: rgba(255,255,255,0.2);
+      border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px;
+    }
+    .header-brand h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.025em; }
+    .header-brand .subtitle { font-size: 0.75rem; opacity: 0.7; }
+    .header-meta { display: flex; align-items: center; gap: 16px; font-size: 0.8125rem; }
+    .meta-item { opacity: 0.85; }
+    .api-pill {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 500;
+    }
+    .api-pill.idle   { background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.75); }
+    .api-pill.live   { background: rgba(56,161,105,0.3); color: #9ae6b4; }
+    .api-pill.demo   { background: rgba(221,107,32,0.3); color: #fbd38d; }
+    .api-pill .dot   { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+    /* MAIN */
+    .main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+    /* STATS */
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .stat-card {
+      background: var(--card); border-radius: var(--radius);
+      padding: 20px; box-shadow: var(--shadow); border-left: 4px solid var(--accent);
+    }
+    .stat-card.c-atrisk  { border-left-color: var(--high); }
+    .stat-card.c-high    { border-left-color: var(--medium); }
+    .stat-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 8px; }
+    .stat-value { font-size: 2rem; font-weight: 700; line-height: 1; }
+    .stat-sub   { font-size: 0.8125rem; color: var(--text-muted); margin-top: 4px; }
+
+    /* CONTROLS */
+    .controls {
+      background: var(--card); border-radius: var(--radius); padding: 14px 20px;
+      box-shadow: var(--shadow); margin-bottom: 14px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .ctrl-label { font-size: 0.8125rem; font-weight: 600; color: var(--text-muted); white-space: nowrap; }
+    .ctrl-select {
+      padding: 7px 28px 7px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 0.875rem; background: var(--bg); color: var(--text); appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%23718096' d='M5 7L0 2h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 9px center; cursor: pointer;
+    }
+    .toggle-group { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+    .toggle-btn { padding: 7px 14px; border: none; background: var(--bg); color: var(--text-muted); font-size: 0.875rem; font-weight: 500; transition: all 0.15s; }
+    .toggle-btn.active { background: var(--accent); color: white; }
+    .toggle-btn:hover:not(.active) { background: var(--border); }
+    .search-box {
+      padding: 7px 10px 7px 30px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+      font-size: 0.875rem; width: 200px; background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%23718096' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E") no-repeat 9px center;
+    }
+    .search-box:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .ctrl-spacer { flex: 1; }
+    .btn { padding: 7px 16px; border-radius: var(--radius-sm); border: none; font-size: 0.875rem; font-weight: 500; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary   { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn:disabled  { opacity: 0.45; cursor: not-allowed; }
+
+    /* STATUS */
+    .status-bar {
+      display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+      background: var(--card); border-radius: var(--radius-sm);
+      margin-bottom: 14px; font-size: 0.8125rem; color: var(--text-muted);
+      box-shadow: var(--shadow);
+    }
+    .status-bar.loading { color: var(--accent); }
+    .status-bar.err     { color: var(--high); background: var(--high-bg); }
+    .spinner { width: 13px; height: 13px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; flex-shrink: 0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* TABLE WRAPPER */
+    .table-wrapper { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+    .table-topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+    .table-title { font-size: 0.9375rem; font-weight: 600; }
+    .table-count { font-size: 0.8125rem; color: var(--text-muted); }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 9px 16px; background: #f7fafc; font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted);
+      text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap;
+    }
+    tbody tr.main-row { border-bottom: 1px solid var(--border); transition: background 0.1s; }
+    tbody tr.main-row:hover { background: #f7fafc; }
+    tbody td { padding: 11px 16px; font-size: 0.875rem; vertical-align: middle; }
+    .cid { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; font-weight: 600; color: var(--primary-light); }
+
+    /* PROB BAR */
+    .prob-cell { display: flex; align-items: center; gap: 8px; }
+    .prob-track { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; min-width: 70px; }
+    .prob-fill  { height: 100%; border-radius: 3px; }
+    .prob-pct   { font-size: 0.8125rem; font-weight: 700; min-width: 44px; text-align: right; }
+
+    /* BADGES */
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 12px; font-size: 0.72rem; font-weight: 600; }
+    .badge.high   { background: var(--high-bg);   color: var(--high);   border: 1px solid var(--high-border); }
+    .badge.medium { background: var(--medium-bg); color: var(--medium); border: 1px solid var(--medium-border); }
+    .badge.low    { background: var(--low-bg);    color: var(--low);    border: 1px solid var(--low-border); }
+    .bdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    .cbadge { display: inline-block; padding: 3px 8px; border-radius: var(--radius-sm); font-size: 0.72rem; font-weight: 500; }
+    .cbadge.month_to_month { background: #fff3cd; color: #856404; }
+    .cbadge.one_year       { background: #e8f4f8; color: #0c5460; }
+    .cbadge.two_year       { background: #e8f5e9; color: #155724; }
+
+    .tbadge { display: inline-block; padding: 3px 8px; border-radius: var(--radius-sm); font-size: 0.72rem; font-weight: 500; }
+    .tbadge.Infant  { background: #fce4ec; color: #880e4f; }
+    .tbadge.Stable  { background: #e3f2fd; color: #0d47a1; }
+    .tbadge.Loyal   { background: #e8f5e9; color: #1b5e20; }
+    .tbadge.Veteran { background: #ede7f6; color: #4527a0; }
+
+    /* ACTION BUTTONS */
+    .action-btns  { display: flex; gap: 6px; align-items: center; }
+    .btn-email    { padding: 5px 10px; font-size: 0.72rem; background: #ebf8ff; color: #2b6cb0; border: 1px solid #bee3f8; border-radius: var(--radius-sm); font-weight: 600; white-space: nowrap; }
+    .btn-email:hover { background: #bee3f8; }
+    .btn-expand   { width: 26px; height: 26px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); display: flex; align-items: center; justify-content: center; font-size: 0.7rem; transition: all 0.15s; }
+    .btn-expand:hover { background: var(--border); }
+    .btn-expand.open  { background: var(--accent); color: white; border-color: var(--accent); }
+
+    /* DETAIL ROW */
+    tr.detail-row       { display: none; }
+    tr.detail-row.open  { display: table-row; }
+    .detail-cell        { padding: 0 !important; border-bottom: 1px solid var(--border); }
+    .detail-content     { background: #f7fafc; padding: 16px 20px; border-top: 1px solid var(--border); }
+    .detail-grid        { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; }
+    .di-label           { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 3px; }
+    .di-value           { font-size: 0.875rem; font-weight: 600; }
+    .di-value.danger    { color: var(--high); }
+    .di-value.warn      { color: var(--medium); }
+    .di-value.good      { color: var(--low); }
+    .services-row       { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .schip              { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 12px; font-size: 0.72rem; font-weight: 500; }
+    .schip.on           { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+    .schip.off          { background: #fafafa; color: #9e9e9e; border: 1px solid #e0e0e0; }
+
+    /* EMPTY */
+    .empty { text-align: center; padding: 52px 24px; }
+    .empty-icon  { font-size: 2.5rem; margin-bottom: 10px; }
+    .empty-title { font-size: 1rem; font-weight: 600; margin-bottom: 4px; }
+    .empty-sub   { font-size: 0.875rem; color: var(--text-muted); }
+
+    /* MODAL */
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(3px); z-index: 1000; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+    .overlay.open { opacity: 1; pointer-events: all; }
+    .modal-box { background: var(--card); border-radius: 12px; width: 600px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.3); transform: translateY(16px) scale(0.98); transition: transform 0.2s; }
+    .overlay.open .modal-box { transform: none; }
+    .mhead { padding: 18px 22px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; justify-content: space-between; }
+    .mhead-title { font-size: 1.0625rem; font-weight: 700; }
+    .mhead-sub   { font-size: 0.8125rem; color: var(--text-muted); margin-top: 2px; }
+    .mclose { width: 30px; height: 30px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 0.9rem; color: var(--text-muted); flex-shrink: 0; }
+    .mclose:hover { background: var(--border); }
+    .mstrip { display: flex; gap: 10px; padding: 10px 22px; background: #f7fafc; border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
+    .mbody { padding: 18px 22px; display: flex; flex-direction: column; gap: 14px; }
+    .frow { display: flex; flex-direction: column; gap: 4px; }
+    .flabel { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); }
+    .finput { padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.875rem; background: var(--bg); }
+    .finput:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .ftarea { padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.875rem; background: var(--bg); resize: vertical; min-height: 210px; line-height: 1.65; }
+    .ftarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .mfoot { padding: 14px 22px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+    .btn-send   { padding: 9px 20px; background: var(--accent); color: white; border: none; border-radius: var(--radius-sm); font-size: 0.875rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-send:hover { background: var(--accent-hover); }
+    .btn-cancel { padding: 9px 14px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 0.875rem; }
+    .btn-cancel:hover { background: var(--border); }
+
+    /* TOAST */
+    .toast { position: fixed; bottom: 24px; right: 24px; padding: 12px 18px; background: #1a202c; color: white; border-radius: var(--radius); font-size: 0.875rem; box-shadow: var(--shadow-lg); z-index: 2000; display: flex; align-items: center; gap: 10px; transform: translateY(80px); opacity: 0; transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+    .toast.show { transform: translateY(0); opacity: 1; }
+
+    /* FOOTER */
+    .app-footer { text-align: center; padding: 16px; font-size: 0.75rem; color: var(--text-muted); }
+  </style>
 </head>
 <body>
-    <h1>Churn Prediction Dashboard</h1>
-    <button onclick="fetchPredictions()">Run Predictions</button>
-    <p id="status">Click the button to connect...</p>
 
+<header class="app-header">
+  <div class="header-brand">
+    <div class="logo-icon">📊</div>
+    <div>
+      <h1>ChurnGuard</h1>
+      <div class="subtitle">Customer Retention Dashboard</div>
+    </div>
+  </div>
+  <div class="header-meta">
+    <span class="meta-item" id="hdr-model">—</span>
+    <span class="meta-item" id="hdr-threshold">—</span>
+    <div class="api-pill idle" id="api-pill">
+      <div class="dot"></div>
+      <span id="api-pill-text">Not connected</span>
+    </div>
+  </div>
+</header>
+
+<main class="main">
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Customers Scored</div>
+      <div class="stat-value" id="s-total">—</div>
+      <div class="stat-sub" id="s-period">Run predictions to begin</div>
+    </div>
+    <div class="stat-card c-atrisk">
+      <div class="stat-label">At Risk</div>
+      <div class="stat-value" id="s-atrisk">—</div>
+      <div class="stat-sub" id="s-atrisk-pct"></div>
+    </div>
+    <div class="stat-card c-high">
+      <div class="stat-label">High Risk</div>
+      <div class="stat-value" id="s-high">—</div>
+      <div class="stat-sub" id="s-medium"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Avg Churn Prob (At-Risk)</div>
+      <div class="stat-value" id="s-avg">—</div>
+      <div class="stat-sub">Across at-risk customers</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <span class="ctrl-label">Period</span>
+    <select class="ctrl-select" id="period-select">
+      <option value="latest">Period 3 — Latest</option>
+      <option value="2">Period 2</option>
+      <option value="1">Period 1</option>
+      <option value="all">All Periods</option>
+    </select>
+    <span class="ctrl-label">Show</span>
+    <div class="toggle-group">
+      <button class="toggle-btn active" id="btn-atrisk" onclick="setRiskFilter('atrisk')">At-Risk Only</button>
+      <button class="toggle-btn" id="btn-showall" onclick="setRiskFilter('all')">All Customers</button>
+    </div>
+    <input type="search" class="search-box" id="search-box" placeholder="Search customer ID…" oninput="setSearch(this.value)">
+    <div class="ctrl-spacer"></div>
+    <button class="btn btn-secondary" id="btn-export" onclick="exportCSV()" disabled>↓ Export CSV</button>
+    <button class="btn btn-primary" id="btn-run" onclick="runPredictions()">▷ Run Predictions</button>
+  </div>
+
+  <div class="status-bar" id="status-bar">
+    Click <strong>Run Predictions</strong> to load and score customers.
+  </div>
+
+  <div class="table-wrapper">
+    <div class="table-topbar">
+      <div class="table-title" id="tbl-title">Churn Risk Report</div>
+      <div class="table-count" id="tbl-count"></div>
+    </div>
     <table>
-        <thead>
-            <tr>
-                <th>Customer ID</th>
-                <th>Probability</th>
-                <th>Prediction</th>
-                <th>Risk Tier</th>
-            </tr>
-        </thead>
-        <tbody id="results-body"></tbody>
+      <thead>
+        <tr>
+          <th style="width:155px">Customer ID</th>
+          <th style="width:185px">Churn Probability</th>
+          <th style="width:105px">Risk Tier</th>
+          <th style="width:115px">Contract</th>
+          <th style="width:100px">Tenure</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="tbl-body">
+        <tr><td colspan="6">
+          <div class="empty">
+            <div class="empty-icon">📈</div>
+            <div class="empty-title">No predictions yet</div>
+            <div class="empty-sub">Click "Run Predictions" to score the current period's customers</div>
+          </div>
+        </td></tr>
+      </tbody>
     </table>
+  </div>
 
-    <script>
-        // // Sample data matching your CustomerFeatures Pydantic model
-        // const customerData = [
-        //     { customer_satisfaction: 2.0, num_complaints: 5, num_service_calls: 8, late_payments: 3, has_phone_service: 1, has_internet_service: 1, has_tech_support: 0, has_streaming_tv: 1, has_streaming_movies: 1, high_risk_flag: 1, is_auto_pay: 0, tenure_segment: 0, contract: "month_to_month" },
-        //     { customer_satisfaction: 9.0, num_complaints: 0, num_service_calls: 0, late_payments: 0, has_phone_service: 1, has_internet_service: 1, has_tech_support: 1, has_streaming_tv: 1, has_streaming_movies: 1, high_risk_flag: 0, is_auto_pay: 1, tenure_segment: 2, contract: "two_year" }
-        // ];
+</main>
 
-        async function fetchPredictions() {
-            const status = document.getElementById('status');
-            const tbody = document.getElementById('results-body');
-            status.innerText = "Loading data from JSON file...";
-            tbody.innerHTML = "";
+<div class="app-footer">BT4301 Group 10 &nbsp;·&nbsp; Customer Churn Prediction System &nbsp;·&nbsp; XGBoost Champion Model</div>
 
-            try {
-                // Fetch data from API endpoint
-                // const dataResponse = await fetch('http://localhost:8000/fetch-latest-data');
+<!-- EMAIL MODAL -->
+<div class="overlay" id="email-modal" onclick="overlayClick(event)">
+  <div class="modal-box">
+    <div class="mhead">
+      <div>
+        <div class="mhead-title">Send Retention Email</div>
+        <div class="mhead-sub" id="modal-sub">Compose a personalised retention message</div>
+      </div>
+      <button class="mclose" onclick="closeModal()">✕</button>
+    </div>
+    <div class="mstrip" id="modal-strip"></div>
+    <div class="mbody">
+      <div class="frow">
+        <label class="flabel">To</label>
+        <input type="email" class="finput" id="email-to">
+      </div>
+      <div class="frow">
+        <label class="flabel">Subject</label>
+        <input type="text" class="finput" id="email-subject">
+      </div>
+      <div class="frow">
+        <label class="flabel">Message</label>
+        <textarea class="ftarea" id="email-body"></textarea>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-send" onclick="mockSend()">✉&nbsp; Send Email</button>
+    </div>
+  </div>
+</div>
 
-                // 1. Load the data from your local JSON file
-                const dataResponse = await fetch('latest_predictions_input.json');
-                if (!dataResponse.ok) throw new Error("Could not find latest_predictions_input.json");
-                
-                const customerData = await dataResponse.json();
-                status.innerText = `Loaded ${customerData.length} customers. Connecting to API...`;
+<!-- TOAST -->
+<div class="toast" id="toast"><span id="toast-msg">Done</span></div>
 
-                // 2. Send that data to your FastAPI backend
-                const apiResponse = await fetch('http://localhost:8000/predict-batch', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(customerData)
-                });
+<script>
+// ──────────────────────────────────────────────
+// STATE
+// ──────────────────────────────────────────────
+const S = {
+  customers: [],
+  predictions: [],
+  period: 'latest',
+  riskFilter: 'atrisk',
+  search: '',
+  expanded: new Set(),
+  apiMode: null,
+  modelInfo: {},
+  ready: false,
+};
 
-                if (!apiResponse.ok) {
-                    const errorDetail = await apiResponse.json(); 
-                    console.log("FULL ERROR FROM SERVER:", errorDetail); // <--- CHECK YOUR BROWSER CONSOLE
-                    throw new Error(`Server Error: ${apiResponse.status}`);
-                }                
-                const result = await apiResponse.json();
-                status.innerText = `Connected! Model Version: ${result.champion_version}`;
+// ──────────────────────────────────────────────
+// PERIOD HELPERS
+// ──────────────────────────────────────────────
+function periodIdx(period, n) {
+  const t = Math.floor(n / 3);
+  return ({ '1': [0, t], '2': [t, t*2], 'latest': [t*2, n], '3': [t*2, n], 'all': [0, n] })[period] || [t*2, n];
+}
+function periodLabel(p) {
+  return ({ '1':'Period 1','2':'Period 2','3':'Period 3 (Latest)','latest':'Period 3 (Latest)','all':'All Periods' })[p] || 'Latest';
+}
 
-                // 3. Render the results
-                result.predictions.forEach((pred, index) => {
-                    const CID = customerData[index].customer_id;
-                    if (pred.churn_prediction === 1) {
-                        const row = `<tr>
-                            <td>${CID}</td>
-                            <td>${(pred.churn_probability * 100).toFixed(1)}%</td>
-                            <td class="risk-row">${pred.churn_prediction} (At Risk)</td>
-                            <td>${pred.risk_tier}</td>
-                        </tr>`;
-                        tbody.innerHTML += row;
-                    }
-                });
+// ──────────────────────────────────────────────
+// MOCK SCORING (API fallback)
+// ──────────────────────────────────────────────
+function mockScore(c) {
+  let p = 0.27;
+  const sat = c.customer_satisfaction;
+  if (sat <= 2) p += 0.28; else if (sat <= 4) p += 0.15; else if (sat <= 6) p += 0.05;
+  const cmp = c.num_complaints;
+  if (cmp >= 4) p += 0.22; else if (cmp >= 2) p += 0.12; else if (cmp >= 1) p += 0.06;
+  const lp = c.late_payments;
+  if (lp >= 3) p += 0.18; else if (lp >= 1) p += 0.08;
+  if (c.contract === 'month_to_month') p += 0.10;
+  else if (c.contract === 'two_year')  p -= 0.07;
+  if (c.high_risk_flag === 1) p += 0.13;
+  if (!c.has_tech_support) p += 0.04;
+  if (!c.is_auto_pay)      p += 0.04;
+  if (c.tenure_segment === 'Infant')  p += 0.06;
+  else if (c.tenure_segment === 'Veteran') p -= 0.05;
+  p = Math.min(0.97, Math.max(0.03, p + (Math.random() * 0.04 - 0.02)));
+  const churn_prediction = p >= 0.57 ? 1 : 0;
+  const risk_tier = p >= 0.6 ? 'high' : p >= 0.3 ? 'medium' : 'low';
+  return { churn_probability: parseFloat(p.toFixed(4)), churn_prediction, risk_tier };
+}
 
-                if (tbody.innerHTML === "") {
-                    tbody.innerHTML = "<tr><td colspan='4'>No high-risk customers found in this batch.</td></tr>";
-                }
+// ──────────────────────────────────────────────
+// RUN PREDICTIONS
+// ──────────────────────────────────────────────
+async function runPredictions() {
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true; btn.textContent = '⟳ Running…';
+  setStatus('loading', '<div class="spinner"></div>&nbsp; Loading customer data…');
 
-            } catch (err) {
-                status.innerText = "Error: " + err.message;
-                console.error(err);
-            }
-        }
-    </script>
+  try {
+    const r = await fetch('latest_predictions_input.json');
+    if (!r.ok) throw new Error('Could not load latest_predictions_input.json');
+    S.customers = await r.json();
+    setStatus('loading', `<div class="spinner"></div>&nbsp; Loaded ${S.customers.length} customers. Scoring…`);
+
+    let preds;
+    try {
+      const ar = await fetch('http://localhost:8000/predict-batch', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(S.customers),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!ar.ok) throw new Error(`HTTP ${ar.status}`);
+      const res = await ar.json();
+      preds = res.predictions;
+      S.modelInfo = { version: res.champion_version || '—', threshold: res.decision_threshold || 0.57, model: res.registered_model_name || 'customer_churn_xgb' };
+      S.apiMode = 'api';
+    } catch(e) {
+      console.warn('[ChurnGuard] API offline, using demo mode:', e.message);
+      preds = S.customers.map(mockScore);
+      S.modelInfo = { version: 'demo', threshold: 0.57, model: 'Demo (API offline)' };
+      S.apiMode = 'mock';
+    }
+
+    S.predictions = preds;
+    S.ready = true;
+    updateHeader();
+    renderAll();
+    document.getElementById('btn-export').disabled = false;
+
+    const [a, b] = periodIdx(S.period, S.customers.length);
+    const atRisk = S.predictions.slice(a, b).filter(p => p.churn_prediction === 1).length;
+    const note = S.apiMode === 'mock' ? ' · Demo Mode (API offline)' : '';
+    setStatus('', `✓ ${S.customers.length.toLocaleString()} customers scored · ${atRisk} at-risk in ${periodLabel(S.period)}${note}`);
+  } catch(e) {
+    setStatus('err', `✕ ${e.message}`);
+    console.error(e);
+  } finally {
+    btn.disabled = false; btn.textContent = '↺ Refresh';
+  }
+}
+
+// ──────────────────────────────────────────────
+// RENDER
+// ──────────────────────────────────────────────
+function renderAll() {
+  const [a, b] = periodIdx(S.period, S.customers.length);
+  const custs = S.customers.slice(a, b);
+  const preds = S.predictions.slice(a, b);
+
+  updateStats(custs, preds);
+
+  let pairs = custs.map((c, i) => ({ c, p: preds[i] }));
+  if (S.riskFilter === 'atrisk') pairs = pairs.filter(({ p }) => p.churn_prediction === 1);
+  if (S.search) pairs = pairs.filter(({ c }) => c.customer_id.toLowerCase().includes(S.search.toLowerCase()));
+
+  document.getElementById('tbl-title').textContent =
+    (S.riskFilter === 'atrisk' ? 'At-Risk Customers' : 'All Customers') + ' — ' + periodLabel(S.period);
+  document.getElementById('tbl-count').textContent = `${pairs.length} record${pairs.length !== 1 ? 's' : ''}`;
+
+  const tbody = document.getElementById('tbl-body');
+  if (!pairs.length) {
+    const msg = S.riskFilter === 'atrisk'
+      ? ['✅', 'No at-risk customers', 'All customers in this period are below the churn threshold.']
+      : ['🔍', 'No results', 'Try adjusting your search or filter.'];
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">${msg[0]}</div><div class="empty-title">${msg[1]}</div><div class="empty-sub">${msg[2]}</div></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = pairs.map(({ c, p }) => rowHTML(c, p)).join('');
+}
+
+function rowHTML(c, p) {
+  const cid  = c.customer_id;
+  const pct  = (p.churn_probability * 100).toFixed(1);
+  const tier = p.risk_tier;
+  const col  = tier === 'high' ? 'var(--high)' : tier === 'medium' ? 'var(--medium)' : 'var(--low)';
+  const open = S.expanded.has(cid);
+  const ctLabel = { month_to_month: 'Monthly', one_year: '1-Year', two_year: '2-Year' }[c.contract] || c.contract;
+  const emailBtn = p.churn_prediction === 1
+    ? `<button class="btn-email" onclick="openEmail('${cid}')">✉ Email</button>` : '';
+
+  return `
+    <tr class="main-row">
+      <td><span class="cid">${cid}</span></td>
+      <td><div class="prob-cell">
+        <div class="prob-track"><div class="prob-fill" style="width:${pct}%;background:${col}"></div></div>
+        <span class="prob-pct" style="color:${col}">${pct}%</span>
+      </div></td>
+      <td><span class="badge ${tier}"><span class="bdot"></span>${tier.charAt(0).toUpperCase()+tier.slice(1)}</span></td>
+      <td><span class="cbadge ${c.contract}">${ctLabel}</span></td>
+      <td><span class="tbadge ${c.tenure_segment}">${c.tenure_segment}</span></td>
+      <td><div class="action-btns">${emailBtn}<button class="btn-expand${open?' open':''}" onclick="toggleRow('${cid}')">${open?'▲':'▼'}</button></div></td>
+    </tr>
+    <tr class="detail-row${open?' open':''}">
+      <td class="detail-cell" colspan="6">${open ? detailHTML(c, p) : ''}</td>
+    </tr>`;
+}
+
+function detailHTML(c, p) {
+  const sc = c.customer_satisfaction;
+  const scClass = sc <= 3 ? 'danger' : sc <= 6 ? 'warn' : 'good';
+  const cmClass = c.num_complaints  >= 3 ? 'danger' : c.num_complaints  >= 1 ? 'warn' : 'good';
+  const lpClass = c.late_payments   >= 2 ? 'danger' : c.late_payments   >= 1 ? 'warn' : 'good';
+  const svClass = c.num_service_calls >= 5 ? 'warn' : '';
+
+  const chips = [
+    ['has_phone_service',    '📞 Phone'],
+    ['has_internet_service', '🌐 Internet'],
+    ['has_tech_support',     '🛠 Tech Support'],
+    ['has_streaming_tv',     '📺 Streaming TV'],
+    ['has_streaming_movies', '🎬 Movies'],
+    ['is_auto_pay',          '💳 Auto Pay'],
+  ].map(([k, lbl]) => `<span class="schip ${c[k]?'on':'off'}">${c[k]?'✓':'✗'} ${lbl}</span>`).join('');
+
+  const flagBadge = c.high_risk_flag === 1
+    ? `<span class="badge high" style="font-size:0.68rem;padding:2px 7px"><span class="bdot"></span>Risk Flagged</span>` : '';
+
+  return `<div class="detail-content">
+    <div class="detail-grid">
+      <div><div class="di-label">Satisfaction</div><div class="di-value ${scClass}">${sc} / 10</div></div>
+      <div><div class="di-label">Complaints</div><div class="di-value ${cmClass}">${c.num_complaints}</div></div>
+      <div><div class="di-label">Service Calls</div><div class="di-value ${svClass}">${c.num_service_calls}</div></div>
+      <div><div class="di-label">Late Payments</div><div class="di-value ${lpClass}">${c.late_payments}</div></div>
+      <div><div class="di-label">Churn Probability</div><div class="di-value">${(p.churn_probability*100).toFixed(2)}%</div></div>
+      <div><div class="di-label">Risk Flag</div><div class="di-value">${c.high_risk_flag ? '' : '✓ Not flagged'}${flagBadge}</div></div>
+    </div>
+    <div class="services-row">${chips}</div>
+  </div>`;
+}
+
+// ──────────────────────────────────────────────
+// STATS
+// ──────────────────────────────────────────────
+function updateStats(custs, preds) {
+  const n     = custs.length;
+  const ar    = preds.filter(p => p.churn_prediction === 1);
+  const high  = preds.filter(p => p.risk_tier === 'high');
+  const med   = preds.filter(p => p.risk_tier === 'medium');
+  const avg   = ar.length ? (ar.reduce((s,p) => s+p.churn_probability, 0)/ar.length*100).toFixed(1) : null;
+
+  document.getElementById('s-total').textContent  = n.toLocaleString();
+  document.getElementById('s-period').textContent = periodLabel(S.period);
+  document.getElementById('s-atrisk').textContent = ar.length.toLocaleString();
+  document.getElementById('s-atrisk-pct').textContent = n ? `${((ar.length/n)*100).toFixed(1)}% of period` : '';
+  document.getElementById('s-high').textContent   = high.length.toLocaleString();
+  document.getElementById('s-medium').textContent = `${med.length} medium risk`;
+  document.getElementById('s-avg').textContent    = avg ? `${avg}%` : '—';
+}
+
+// ──────────────────────────────────────────────
+// HEADER
+// ──────────────────────────────────────────────
+function updateHeader() {
+  const m = S.modelInfo;
+  document.getElementById('hdr-model').textContent     = `${m.model} v${m.version}`;
+  document.getElementById('hdr-threshold').textContent = `Threshold: ${m.threshold}`;
+  const pill = document.getElementById('api-pill');
+  const txt  = document.getElementById('api-pill-text');
+  pill.className = 'api-pill ' + (S.apiMode === 'api' ? 'live' : S.apiMode === 'mock' ? 'demo' : 'idle');
+  txt.textContent = S.apiMode === 'api' ? 'API Connected' : S.apiMode === 'mock' ? 'Demo Mode' : 'Not connected';
+}
+
+function setStatus(type, html) {
+  const el = document.getElementById('status-bar');
+  el.className = 'status-bar' + (type ? ' ' + type : '');
+  el.innerHTML = html;
+}
+
+// ──────────────────────────────────────────────
+// FILTERS
+// ──────────────────────────────────────────────
+function setRiskFilter(f) {
+  S.riskFilter = f;
+  document.getElementById('btn-atrisk').classList.toggle('active', f === 'atrisk');
+  document.getElementById('btn-showall').classList.toggle('active', f === 'all');
+  if (S.ready) renderAll();
+}
+function setSearch(v) { S.search = v; if (S.ready) renderAll(); }
+
+document.getElementById('period-select').addEventListener('change', function() {
+  S.period = this.value; S.expanded.clear(); if (S.ready) renderAll();
+});
+
+// ──────────────────────────────────────────────
+// ROW EXPAND
+// ──────────────────────────────────────────────
+function toggleRow(cid) {
+  S.expanded.has(cid) ? S.expanded.delete(cid) : S.expanded.add(cid);
+  if (S.ready) renderAll();
+}
+
+// ──────────────────────────────────────────────
+// EMAIL MODAL
+// ──────────────────────────────────────────────
+function openEmail(cid) {
+  const idx = S.customers.findIndex(c => c.customer_id === cid);
+  if (idx === -1) return;
+  const c = S.customers[idx], p = S.predictions[idx];
+
+  document.getElementById('modal-sub').textContent = `Drafting retention email for ${cid}`;
+  document.getElementById('modal-strip').innerHTML = `
+    <span class="cid">${cid}</span>
+    <span class="badge ${p.risk_tier}"><span class="bdot"></span>${p.risk_tier.charAt(0).toUpperCase()+p.risk_tier.slice(1)} Risk</span>
+    <span class="cbadge ${c.contract}" style="font-size:0.72rem">${{month_to_month:'Monthly',one_year:'1-Year',two_year:'2-Year'}[c.contract]}</span>
+    <span style="font-size:0.8rem;color:var(--text-muted)">Prob: <strong style="color:var(--${p.risk_tier})">${(p.churn_probability*100).toFixed(1)}%</strong></span>
+  `;
+  document.getElementById('email-to').value = `${cid.toLowerCase()}@example.com`;
+  const { subject, body } = buildEmail(c, p);
+  document.getElementById('email-subject').value = subject;
+  document.getElementById('email-body').value = body;
+  document.getElementById('email-modal').classList.add('open');
+  setTimeout(() => document.getElementById('email-to').focus(), 80);
+}
+
+function buildEmail(c, p) {
+  const tier = p.risk_tier, cid = c.customer_id;
+  const sig = `\n\nWarm regards,\nSarah Chen\nCustomer Success Manager\n📞 1800-XXX-XXXX  |  support@example.com`;
+  const hi  = `Dear Valued Customer (${cid}),\n\n`;
+
+  if (tier === 'high' && c.contract === 'month_to_month') {
+    return {
+      subject: `An exclusive offer just for you`,
+      body: hi +
+        `We noticed you're on our flexible month-to-month plan and want to make sure you're getting the best value from your subscription.\n\n` +
+        `As a thank-you for being our customer, we'd love to offer you:\n\n` +
+        `  ✓  20% discount when you switch to an annual plan\n` +
+        `  ✓  3 months of complimentary Tech Support\n` +
+        `  ✓  Dedicated priority customer service\n\n` +
+        `This offer is valid for the next 14 days. Simply reply to this email or call us to redeem.` + sig
+    };
+  }
+  if (tier === 'high' && c.num_complaints >= 2) {
+    return {
+      subject: `We hear you — let's make this right`,
+      body: hi +
+        `We sincerely apologise for the challenges you've experienced recently. Your feedback matters deeply to us.\n\n` +
+        `To make things right, we'd like to offer you:\n\n` +
+        `  ✓  A service credit applied to your next invoice\n` +
+        `  ✓  A dedicated account manager assigned to your account\n` +
+        `  ✓  Complimentary service upgrade for 2 months\n\n` +
+        `Please reply or call us at your convenience — we'll make it a priority.` + sig
+    };
+  }
+  if (tier === 'high' && c.late_payments >= 1) {
+    return {
+      subject: `Flexible payment options available for you`,
+      body: hi +
+        `We understand that unexpected circumstances can sometimes make managing payments difficult — we're here to help.\n\n` +
+        `  ✓  Flexible payment plan with no penalty fees\n` +
+        `  ✓  Auto-pay setup assistance (save 5% monthly)\n` +
+        `  ✓  One-time billing extension if needed\n\n` +
+        `Please reach out so we can find an arrangement that works for you.` + sig
+    };
+  }
+  if (tier === 'high' && c.customer_satisfaction <= 4) {
+    return {
+      subject: `Your experience matters — let's talk`,
+      body: hi +
+        `We've noticed your recent satisfaction scores and want to personally reach out. Your experience is our highest priority.\n\n` +
+        `We'd love to connect with you to:\n\n` +
+        `  ✓  Understand what we can do better\n` +
+        `  ✓  Review your current plan and suggest improvements\n` +
+        `  ✓  Offer a complimentary service review session\n\n` +
+        `Would you be available for a quick 10-minute call this week?` + sig
+    };
+  }
+  if (tier === 'high') {
+    return {
+      subject: `A personal note from our team`,
+      body: hi +
+        `Thank you for being our customer. We'd love to ensure you're getting the most from your plan.\n\n` +
+        `  ✓  Complimentary plan review\n` +
+        `  ✓  Access to our loyalty rewards programme\n` +
+        `  ✓  First access to upcoming service upgrades\n\n` +
+        `If there's anything we can do to improve your experience, please don't hesitate to reach out.` + sig
+    };
+  }
+  // medium risk default
+  return {
+    subject: `Checking in — how can we serve you better?`,
+    body: hi +
+      `Thank you for being part of our community. We're reaching out to see how we can continue serving you well.\n\n` +
+      `  ✓  Explore service bundles tailored to your usage\n` +
+      `  ✓  Take advantage of our referral rewards\n` +
+      `  ✓  Speak to an advisor about optimising your plan\n\n` +
+      `Feel free to reply anytime — we're always happy to help.` + sig
+  };
+}
+
+function closeModal() { document.getElementById('email-modal').classList.remove('open'); }
+function overlayClick(e) { if (e.target === document.getElementById('email-modal')) closeModal(); }
+
+function mockSend() {
+  const to = document.getElementById('email-to').value || 'customer';
+  closeModal();
+  showToast(`✅ Email sent to ${to}`);
+}
+
+// ──────────────────────────────────────────────
+// TOAST
+// ──────────────────────────────────────────────
+let _toastTimer;
+function showToast(msg) {
+  document.getElementById('toast-msg').textContent = msg;
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+// ──────────────────────────────────────────────
+// EXPORT CSV
+// ──────────────────────────────────────────────
+function exportCSV() {
+  if (!S.ready) return;
+  const [a, b] = periodIdx(S.period, S.customers.length);
+  let pairs = S.customers.slice(a, b).map((c, i) => ({ c, p: S.predictions[a + i] }));
+  if (S.riskFilter === 'atrisk') pairs = pairs.filter(({ p }) => p.churn_prediction === 1);
+
+  const headers = ['customer_id','churn_probability','churn_prediction','risk_tier','contract','tenure_segment','customer_satisfaction','num_complaints','num_service_calls','late_payments','high_risk_flag'];
+  const rows = pairs.map(({ c, p }) =>
+    [c.customer_id, p.churn_probability, p.churn_prediction, p.risk_tier, c.contract, c.tenure_segment,
+     c.customer_satisfaction, c.num_complaints, c.num_service_calls, c.late_payments, c.high_risk_flag].join(',')
+  );
+  const csv  = [headers.join(','), ...rows].join('\n');
+  const url  = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `churn_${S.period}_${new Date().toISOString().slice(0,10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+  showToast(`CSV exported — ${pairs.length} records`);
+}
+
+// Keyboard shortcut
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
 </body>
 </html>
