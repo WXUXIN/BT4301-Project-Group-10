@@ -1,4 +1,6 @@
-BT4301 Project – Group 10
+# BT4301 Project – Group 10 (Customer Churn Analytics)
+
+End-to-end **Customer Churn** analytics project covering DataOps (Airflow-orchestrated ETL into a MySQL star schema with row-level fingerprint watermarking and lineage), MLOps (MLflow tracking + XGBoost retraining), and DevOps (deployment).
 
 ### 1. Prerequisites
 
@@ -51,10 +53,9 @@ pip install -r dataops/requirements.txt
 
 To deactivate the venv later: `deactivate`.
 
-For Jupyter notebook usage from this venv, install `ipykernel` (if not already installed) and register the kernel:
+For Jupyter notebook usage from this venv, install `ipykernel` (already in `requirements.txt`) and register the kernel:
 
 ```bash
-pip install ipykernel
 python -m ipykernel install --user --name bt4301-venv --display-name "Python (bt4301-venv)"
 ```
 
@@ -72,7 +73,7 @@ If you use **Ubuntu in Docker**, run this inside the container so the notebook c
 
 ### 4. MySQL setup
 
-1. **Create database**
+1. **Create the data warehouse database**
 
    In MySQL:
 
@@ -80,6 +81,12 @@ If you use **Ubuntu in Docker**, run this inside the container so the notebook c
    CREATE DATABASE customer_churn;
    USE customer_churn;
    ```
+
+   Tables (`dim_customer`, `dim_account`, `dim_service`, `dim_behavior`, `fact_customer_churn`, `train_churn_model`, `data_lineage_log`) are created by the ETL DAG on first run — no manual DDL is required.
+
+2. **Source data**
+
+   Place the source file `customer_churn_1M.csv` under `data/` (i.e. `data/customer_churn_1M.csv`). The ETL slices it into monthly periods keyed by `signup_date`.
 
 ### 5. SQLTools connection (view ingested tables)
 
@@ -92,40 +99,43 @@ Use **SQLTools** in Cursor/VS Code to connect to MySQL and view the tables after
    - Open the **SQLTools** sidebar (database icon or “SQLTools” in the activity bar).
    - Click **“Add new connection”** (or the + icon).
    - Choose **MySQL** (or MySQL/MariaDB) as the driver.
-   - Fill in the connection details to match your `MYSQL_CONFIG` (and the database where the pipeline writes):
+   - Fill in the connection details to match your MySQL credentials (and the database where the pipeline writes):
      - **Host:** `localhost` (or your MySQL host; if MySQL runs inside Docker, use the host that Cursor can reach, e.g. `localhost` if port 3306 is forwarded).
      - **Port:** `3306`
-     - **User:** same as in `MYSQL_CONFIG` (e.g. `bt4301`).
-     - **Password:** same as in `MYSQL_CONFIG`.
+     - **User:** `bt4301` (or whatever you configured).
+     - **Password:** as configured.
      - **Database:** `customer_churn`
-   - Give the connection a name (e.g. “Home Credit”) and save.
+   - Give the connection a name (e.g. “Customer Churn DWH”) and save.
 
 3. **Connect and view tables**
    - Select the new connection and click **Connect** (or right‑click → Connect).
-   - Once connected, expand the connection → **home_credit** → **Tables** to see the ingested tables: **application_train**, **application_test**, **bureau**, **bureau_balance**.
+   - Once connected, expand the connection → **customer_churn** → **Tables** to see the ingested star-schema tables: **dim_customer**, **dim_account**, **dim_service**, **dim_behavior**, **fact_customer_churn**, the denormalized **train_churn_model** view used for ML training, and the **data_lineage_log** audit table.
    - You can run `SELECT` queries or open table data from the explorer.
 
 Ensure MySQL is running (`sudo service mysql start` in Ubuntu/Docker) and that the host/port are reachable from where Cursor runs (e.g. port 3306 forwarded from the container if MySQL is inside Docker).
 
 ### 6. Apache Airflow (orchestration)
 
-The project includes **Apache Airflow** for workflow orchestration. Airflow configuration and DAGs live under `dataops/airflow/`.
+The project uses **Apache Airflow** for workflow orchestration. Airflow configuration and DAGs live under `dataops/airflow/`.
 
-**What’s included:**
+**What's included:**
 
 - **`dataops/airflow/airflow.cfg`** — Airflow configuration (paths, executor, database, logging).
-- **`dataops/airflow/dags/`** — Folder for DAG Python files (scheduler loads DAGs from here).
+- **`dataops/airflow/dags/`** — DAG Python files (scheduler loads DAGs from here):
+  - `customer_churn_etl_dag.py` — incremental monthly ETL (`customer_churn_incremental_etl`); chains into the MLOps DAG via `TriggerDagRunOperator`.
+  - `customer_churn_fingerprint_verification_dag.py` — re-hashes business columns and compares against stored `row_fp` watermarks (manual trigger, audit).
+  - `customer_churn_mlops_dag.py` — XGBoost retraining and monitoring against MLflow (`customer_churn_mlops_pipeline`).
 - **`dataops/airflow/plugins/`** — Custom Airflow plugins (if any).
 - **`dataops/airflow/logs/`** — Task and DAG processor logs.
 
 **Airflow metadata database (MySQL):**
 
-Airflow uses a **separate** MySQL database from the Home Credit data:
+Airflow uses a **separate** MySQL database from the customer churn data warehouse:
 
 - **Database name:** `airflow_group10`
 - **Connection** (in `airflow.cfg`): `mysql+mysqldb://bt4301:password@localhost:3306/airflow_group10`
 
-Create the database and user in MySQL (same host/user as your project MySQL, or adjust the connection in `airflow.cfg`):
+Create the database in MySQL (same host/user as your project MySQL, or adjust the connection in `airflow.cfg`):
 
 ```sql
 CREATE DATABASE airflow_group10;
@@ -133,14 +143,13 @@ CREATE DATABASE airflow_group10;
 
 **Setup steps:**
 
-1. Install Airflow and the MySQL provider in your venv (if not already in `dataops/requirements.txt`):
+1. Airflow + the MySQL provider + `mysqlclient` are already pinned in `dataops/requirements.txt`. Re-install if needed:
 
    ```bash
-   pip install "apache-airflow>=2.0" "apache-airflow-providers-mysql"
-   pip install mysqlclient   # for mysql+mysqldb driver
+   pip install -r dataops/requirements.txt
    ```
 
-2. **Set `AIRFLOW_HOME`** to the project’s Airflow directory. **You must do this in the same shell before every `airflow` command**, otherwise Airflow uses `~/airflow` and will not see the project’s DAGs (e.g. `home_credit_etl`).
+2. **Set `AIRFLOW_HOME`** to the project's Airflow directory. **You must do this in the same shell before every `airflow` command**, otherwise Airflow uses `~/airflow` and will not see the project's DAGs (e.g. `customer_churn_incremental_etl`).
 
    From the project root `BT4301-Project-Group-10`:
 
@@ -180,9 +189,9 @@ CREATE DATABASE airflow_group10;
    airflow api-server
    ```
 
-   If you see “Searching for files in dags-folder at `/root/airflow/dags`” or only tutorial DAGs, Airflow is using the default home. Stop the processes, set `AIRFLOW_HOME` as above, and start again.
+   If you see "Searching for files in dags-folder at `/root/airflow/dags`" or only tutorial DAGs, Airflow is using the default home. Stop the processes, set `AIRFLOW_HOME` as above, and start again.
 
-Then open the UI at `http://localhost:8088` (api-server) or your webserver port. The **home_credit_etl** DAG will appear in `dataops/airflow/dags/` once the scheduler reads from the project’s `dags` folder.
+Then open the UI at `http://localhost:8088` (api-server) or your webserver port. The **customer_churn_incremental_etl**, **customer_churn_mlops_pipeline**, and **customer_churn_fingerprint_verification** DAGs will appear once the scheduler reads from the project's `dags` folder.
 
 **Config highlights (in `airflow.cfg`):**
 
@@ -201,27 +210,16 @@ rm -f /tmp/airflow_churn_period_counter.txt
 
 Wait until no run is in the middle of updating the counter before deleting it, so the next scheduled run starts cleanly from period 1.
 
-### 7. Running the pipeline notebook
+### 7. Running the customer churn pipeline
 
-1. In your **remote Ubuntu terminal** (Docker or WSL2):
-   - Activate the venv and ensure MySQL is running:
+Three ways to drive the pipeline, depending on what you want to do:
 
-   ```bash
-   cd BT4301-Project-Group-10
-   source venv/bin/activate
-   sudo service mysql start
-   ```
+**a) Production-style (Airflow, recommended).** Once Airflow is up (Section 6), enable the `customer_churn_incremental_etl` DAG. It runs every minute by default, with each run ingesting one monthly period from `data/customer_churn_1M.csv`, writing to the star schema, attaching SHA-256 row-level `row_fp` watermarks, logging into `data_lineage_log`, then triggering `customer_churn_mlops_pipeline` for retraining + monitoring.
 
-2. Start your notebook server (if needed) and open `dataops/home_credit_pipeline.ipynb`.
+**b) Watermark audit.** Manually trigger `customer_churn_fingerprint_verification` from the Airflow UI to re-hash business columns and verify they still match the stored `row_fp` for every dimension and the fact table.
 
-3. Ensure the kernel is **“Python (bt4301-venv)”**.
+**c) EDA notebook.** Open `dataops/churn_eda.ipynb` and select the **Python (bt4301-venv)** kernel. The notebook reads from MySQL via SQLAlchemy and walks through churn-rate breakdowns, correlations, and Cramér's V / mutual-information feature signals.
 
-4. Run the notebook cells in order:
-   - Environment and imports
-   - Database connection and table creation
-   - Data loading
-   - Feature engineering / modelling steps
+After the ETL has loaded data, use the **SQLTools** connection (Section 5) to confirm the star-schema tables (`dim_customer`, `dim_account`, `dim_service`, `dim_behavior`, `fact_customer_churn`), the denormalized `train_churn_model` view, and the `data_lineage_log` audit table are all present and to run queries.
 
-After the pipeline has loaded data, use the **SQLTools** connection (Section 5) to confirm the tables **application_train**, **application_test**, **bureau**, and **bureau_balance** are present and to run queries.
-
-This should fully set up the Python environment, MySQL database, SQLTools connection, optional Airflow orchestration, and notebook execution for the project.
+This should fully set up the Python environment, MySQL data warehouse, SQLTools connection, Airflow orchestration, and notebook execution for the project.

@@ -52,7 +52,7 @@ EXCLUDED_COLS = {"customer_id", "signup_date", "ingestion_period", "churn"}
 
 def load_selected_features(fallback_cols=None):
     """
-    Prefer teammate's feature_lists.json if it exists.
+    Prefer feature_lists.json if it exists.
     If not, fall back to all current train_churn_model feature columns.
     """
     if os.path.exists(FEATURE_LIST_PATH):
