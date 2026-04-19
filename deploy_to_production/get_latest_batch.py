@@ -4,8 +4,6 @@ from sqlalchemy import create_engine
 from datetime import datetime, timedelta
 import json
 
-# 1. Database Connection (using your config settings)
-# Replace with your actual credentials from mlops_config.py
 USER, PASSWORD, HOST, DB = "bt4301", "password", "localhost", "customer_churn"
 engine = create_engine(f"mysql+pymysql://{USER}:{PASSWORD}@{HOST}/{DB}")
 
