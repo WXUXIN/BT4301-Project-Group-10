@@ -26,7 +26,7 @@ with DAG(
         from dataops.airflow.mlops.retrain_xgb_mlflow import retrain_and_register
 
         result = retrain_and_register()
-        if result["action"] == "skip" if "action" in result else False:
+        if "action" in result and result["action"] == "skip":
             raise AirflowSkipException(result["reason"])
         return result
 
