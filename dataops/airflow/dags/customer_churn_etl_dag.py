@@ -235,13 +235,13 @@ with DAG(
     trigger_mlops = TriggerDagRunOperator(
         task_id="trigger_mlops_pipeline",
         trigger_dag_id="customer_churn_mlops_pipeline",
-        wait_for_completion=True,
-        deferrable=True,
-        reset_dag_run=True,
-        poke_interval=20,
-        allowed_states=["success"],
-        failed_states=["failed"],
     )
+
+    @task
+    def wait_for_mlops_settle():
+        import time
+        print("MLOps DAG triggered. Giving it 30s to register a new champion (if available) before syncing...")
+        time.sleep(30)
 
     @task
     def sync_champion_if_promoted():
@@ -249,4 +249,4 @@ with DAG(
 
         return do_sync()
 
-    etl_done >> wait_before_mlops() >> trigger_mlops >> sync_champion_if_promoted()
+    etl_done >> wait_before_mlops() >> trigger_mlops >> wait_for_mlops_settle() >> sync_champion_if_promoted()
