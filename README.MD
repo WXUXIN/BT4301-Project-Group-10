@@ -214,7 +214,7 @@ CREATE DATABASE airflow_group10;
    source venv/bin/activate
    export AIRFLOW_HOME="$(pwd)/dataops/airflow"
 
-   airflow scheduler & airflow dag-processor & airflow triggerer & airflow api-server
+   airflow scheduler & airflow dag-processor & airflow api-server
    ```
 
    Open the UI at http://localhost:8088 (api-server). The three DAGs (`customer_churn_incremental_etl`, `customer_churn_mlops_pipeline`, `customer_churn_fingerprint_verification`) will appear once the scheduler reads from the project's `dags` folder.
