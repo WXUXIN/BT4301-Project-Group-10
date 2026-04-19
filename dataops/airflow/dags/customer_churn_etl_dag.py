@@ -3,6 +3,7 @@ from airflow.decorators import task
 from datetime import datetime
 import os
 from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.sensors.external_task import ExternalTaskSensor
 
 COUNTER_FILE = "/tmp/airflow_churn_period_counter.txt"
 
@@ -229,10 +230,17 @@ with DAG(
     trigger_mlops = TriggerDagRunOperator(
         task_id="trigger_mlops_pipeline",
         trigger_dag_id="customer_churn_mlops_pipeline",
+        wait_for_completion=True,
+        reset_dag_run=True,
+        poke_interval=20,
+        allowed_states=["success"],
+        failed_states=["failed"],
     )
 
     @task
-    def confirm_trigger():
-        print("✅ MLOps DAG trigger executed")
+    def sync_champion_if_promoted():
+        from customer_churn_etl_functions import sync_champion_if_promoted as do_sync
 
-    etl_done >> trigger_mlops >> confirm_trigger()
+        return do_sync()
+
+    etl_done >> trigger_mlops >> sync_champion_if_promoted()

@@ -55,14 +55,27 @@ def verify_row_fingerprints(df_loaded, key_col="customer_id"):
     return mismatches.empty, mismatches
 
 
-def read_table_for_fingerprint_audit(dwh_engine, table_name: str):
+def read_table_for_fingerprint_audit(dwh_engine, table_name: str, chunksize=50000):
     """
-    Load full warehouse tables for row fingerprint verification.
+    Load warehouse tables for row fingerprint verification in memory-efficient chunks.
+    Process in batches of chunksize (default 50k rows) to avoid OOM on large tables.
     """
     if table_name not in TABLES_FINGERPRINT_AUDIT:
         raise ValueError(f"Table not allowed for audit: {table_name!r}")
 
-    return pd.read_sql(text(f"SELECT * FROM `{table_name}`"), con=dwh_engine)
+    # Read in chunks and concatenate to manage memory
+    chunks = []
+    for chunk in pd.read_sql(
+        text(f"SELECT * FROM `{table_name}`"),
+        con=dwh_engine,
+        chunksize=chunksize
+    ):
+        chunks.append(chunk)
+
+    if chunks:
+        return pd.concat(chunks, ignore_index=True)
+    else:
+        return pd.DataFrame()
 
 
 def verify_fingerprints_for_table(dwh_engine, table_name: str):

@@ -16,11 +16,14 @@ from sqlalchemy import text
 
 # Update this to your real file path
 CSV_FILE_PATH = (
-    "/root/bt4301_group_project/BT4301-Project-Group-10/data/customer_churn_1M.csv"
+    "/root/bt4301-group10/BT4301-Project-Group-10/data/customer_churn_1M.csv"
 )
 
 # Target MySQL data warehouse
 DATAWAREHOUSE_DB = "mysql+pymysql://bt4301:password@localhost:3306/customer_churn"
+
+# Project root for file paths
+PROJECT_ROOT = "/root/bt4301-group10/BT4301-Project-Group-10"
 
 
 # ---------------------------------------------------------
@@ -728,3 +731,146 @@ def log_lineage(
                 "log_timestamp": datetime.now(),
             },
         )
+
+
+# ---------------------------------------------------------
+# CHAMPION MODEL SYNC (for production deployment)
+# ---------------------------------------------------------
+
+
+def sync_champion_if_promoted():
+    """
+    Check if a new champion was promoted in MLflow.
+    If yes, sync the champion model to ./deploy_to_production/artifacts/current/
+    This integrates the logic from sync_champion_from_mlflow.py into the pipeline.
+
+    Returns:
+        str: Status message ('no_champion', 'synced_v{version}', or error code)
+    """
+    import json
+    import shutil
+    import sqlite3
+    from pathlib import Path
+    from urllib.parse import urlparse
+    from datetime import timezone
+
+    # Import config from mlops module (add sibling mlops/ dir to sys.path)
+    import sys
+    _mlops_dir = str(Path(__file__).resolve().parent.parent / "mlops")
+    if _mlops_dir not in sys.path:
+        sys.path.insert(0, _mlops_dir)
+    from mlops_config import REGISTERED_MODEL_NAME, FEATURE_LIST_PATH
+
+    OUTPUT_DIR = Path(PROJECT_ROOT) / "deploy_to_production" / "artifacts" / "current"
+    DB_PATH = Path(PROJECT_ROOT) / "mlflow.db"
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"[champion-sync] Checking for new champion in {DB_PATH}")
+
+    # Query local MLflow database for champion
+    con = sqlite3.connect(str(DB_PATH))
+    con.row_factory = sqlite3.Row
+
+    champion_row = con.execute(
+        "SELECT version FROM registered_model_aliases "
+        "WHERE name = ? AND alias = 'champion'",
+        (REGISTERED_MODEL_NAME,),
+    ).fetchone()
+
+    if champion_row is None:
+        print(f"[champion-sync] No champion alias found for {REGISTERED_MODEL_NAME}")
+        con.close()
+        return "no_champion"
+
+    version = str(champion_row["version"])
+
+    # Get storage_location and run_id for that version
+    mv_row = con.execute(
+        "SELECT run_id, storage_location FROM model_versions "
+        "WHERE name = ? AND version = ?",
+        (REGISTERED_MODEL_NAME, version),
+    ).fetchone()
+
+    if mv_row is None:
+        print(f"[champion-sync] Model version {version} not found")
+        con.close()
+        return "version_not_found"
+
+    run_id = mv_row["run_id"]
+    storage_location = mv_row["storage_location"]
+
+    # Get tags
+    tag_rows = con.execute(
+        "SELECT key, value FROM model_version_tags "
+        "WHERE name = ? AND version = ?",
+        (REGISTERED_MODEL_NAME, version),
+    ).fetchall()
+    tags = {r["key"]: r["value"] for r in tag_rows}
+
+    con.close()
+
+    print(f"[champion-sync] Champion found:")
+    print(f"  version              : {version}")
+    print(f"  run_id               : {run_id}")
+    print(f"  trained_up_to_period : {tags.get('trained_up_to_period', 'n/a')}")
+    print(f"  decision_threshold   : {tags.get('decision_threshold', 'n/a')}")
+
+    # Resolve file:// URI to local path
+    parsed = urlparse(storage_location)
+    artifacts_dir = Path(parsed.path)
+    model_pkl_src = artifacts_dir / "model.pkl"
+
+    if not model_pkl_src.exists():
+        print(f"[champion-sync] ERROR: model.pkl not found at {model_pkl_src}")
+        return "model_not_found"
+
+    # Copy entire artifact directory to OUTPUT_DIR/model/
+    model_dest = OUTPUT_DIR / "model"
+    if model_dest.exists():
+        shutil.rmtree(model_dest)
+    shutil.copytree(str(artifacts_dir), str(model_dest))
+    print(f"[champion-sync] Model copied: {artifacts_dir} → {model_dest}/")
+
+    # Sync feature list
+    dest_features = OUTPUT_DIR / "feature_lists.json"
+    source_features = Path(FEATURE_LIST_PATH)
+
+    if source_features.exists():
+        shutil.copy2(str(source_features), str(dest_features))
+        print(f"[champion-sync] Copied feature_lists.json from: {source_features}")
+    else:
+        print(f"[champion-sync] WARNING: feature_lists.json not found at {source_features}")
+
+    # Write metadata
+    try:
+        threshold = float(tags.get("decision_threshold")) if tags.get("decision_threshold") else None
+    except (ValueError, TypeError):
+        threshold = None
+
+    try:
+        period = (
+            int(tags.get("trained_up_to_period"))
+            if tags.get("trained_up_to_period") and str(tags.get("trained_up_to_period")).isdigit()
+            else tags.get("trained_up_to_period")
+        )
+    except (ValueError, TypeError):
+        period = tags.get("trained_up_to_period")
+
+    metadata = {
+        "registered_model_name": REGISTERED_MODEL_NAME,
+        "champion_version": version,
+        "decision_threshold": threshold,
+        "trained_up_to_period": period,
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    dest_metadata = OUTPUT_DIR / "metadata.json"
+    with open(dest_metadata, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    print(f"[champion-sync] metadata.json → {metadata}")
+    print(f"[champion-sync] ✅ Champion sync complete. Ready for Docker deployment.")
+    print(f"[champion-sync] Next: docker compose -f deploy_to_production/compose.yaml restart churn-api")
+
+    return f"synced_v{version}"
